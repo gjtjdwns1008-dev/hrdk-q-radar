@@ -1,0 +1,54 @@
+name: Q-RADAR Manual
+
+# ══════════════════════════════════════════════════════════════════
+# 수동 실행 전용 (기존 RADAR run-manual.yml 계승)
+#   · Actions → Q-RADAR Manual → Run workflow 버튼
+#   · manual_date에 YYYYMMDD 입력 → 그 시행일자만 처리 (mark_done 안 함)
+#   · 비워두고 실행 → 자동 백필 모드 (밀린 날짜 처리 / 없으면 무해 통과 = 배선 테스트용)
+#   · daily와 같은 concurrency 그룹 — 스케줄 실행과 절대 겹치지 않음
+# ══════════════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+    inputs:
+      manual_date:
+        description: '처리할 시행일자 (YYYYMMDD) — 비우면 자동 백필'
+        required: false
+        default: ''
+
+concurrency:
+  group: qradar-daily
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 필수 라이브러리 설치
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m pip install --upgrade pip
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+          pip install -r requirements.txt
+
+      - name: Q-RADAR 실행 (수동)
+        env:
+          LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          WORKNET_API_KEY: ${{ secrets.WORKNET_API_KEY }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          MANUAL_DATE: ${{ github.event.inputs.manual_date }}
+        run: python main.py
