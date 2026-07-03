@@ -1,0 +1,104 @@
+name: Q-RADAR Daily
+
+# ══════════════════════════════════════════════════════════════════
+# Q-RADAR 일일 배치 — 종일 블랭킷 48회 (매시 20분·50분, 라이브 검증 패턴 계승)
+#   · 라이브(monitor·RADAR) 크론은 :20/:50을 안 쓰므로 동시 타격 0회 (새도우 안전)
+#   · 성공하면 mark_done → 이후 크론은 '밀린 날짜 없음'으로 무해 통과
+#   · 새도우 런 기간: WEBHOOK_URL 시크릿을 비워두면 메일 발송 안 됨(안전핀)
+#   · 상태(🔴/🟢)는 총괄현황표에 항상 기록, 건수는 성공 시에만 (착시 방지 설계)
+# ══════════════════════════════════════════════════════════════════
+
+on:
+  schedule:
+    - cron: '20 15 * * *'   # KST 00:20
+    - cron: '50 15 * * *'   # KST 00:50
+    - cron: '20 16 * * *'   # KST 01:20
+    - cron: '50 16 * * *'   # KST 01:50
+    - cron: '20 17 * * *'   # KST 02:20
+    - cron: '50 17 * * *'   # KST 02:50
+    - cron: '20 18 * * *'   # KST 03:20
+    - cron: '50 18 * * *'   # KST 03:50
+    - cron: '20 19 * * *'   # KST 04:20
+    - cron: '50 19 * * *'   # KST 04:50
+    - cron: '20 20 * * *'   # KST 05:20
+    - cron: '50 20 * * *'   # KST 05:50
+    - cron: '20 21 * * *'   # KST 06:20
+    - cron: '50 21 * * *'   # KST 06:50
+    - cron: '20 22 * * *'   # KST 07:20
+    - cron: '50 22 * * *'   # KST 07:50
+    - cron: '20 23 * * *'   # KST 08:20
+    - cron: '50 23 * * *'   # KST 08:50
+    - cron: '20 0 * * *'   # KST 09:20
+    - cron: '50 0 * * *'   # KST 09:50
+    - cron: '20 1 * * *'   # KST 10:20
+    - cron: '50 1 * * *'   # KST 10:50
+    - cron: '20 2 * * *'   # KST 11:20
+    - cron: '50 2 * * *'   # KST 11:50
+    - cron: '20 3 * * *'   # KST 12:20
+    - cron: '50 3 * * *'   # KST 12:50
+    - cron: '20 4 * * *'   # KST 13:20
+    - cron: '50 4 * * *'   # KST 13:50
+    - cron: '20 5 * * *'   # KST 14:20
+    - cron: '50 5 * * *'   # KST 14:50
+    - cron: '20 6 * * *'   # KST 15:20
+    - cron: '50 6 * * *'   # KST 15:50
+    - cron: '20 7 * * *'   # KST 16:20
+    - cron: '50 7 * * *'   # KST 16:50
+    - cron: '20 8 * * *'   # KST 17:20
+    - cron: '50 8 * * *'   # KST 17:50
+    - cron: '20 9 * * *'   # KST 18:20
+    - cron: '50 9 * * *'   # KST 18:50
+    - cron: '20 10 * * *'   # KST 19:20
+    - cron: '50 10 * * *'   # KST 19:50
+    - cron: '20 11 * * *'   # KST 20:20
+    - cron: '50 11 * * *'   # KST 20:50
+    - cron: '20 12 * * *'   # KST 21:20
+    - cron: '50 12 * * *'   # KST 21:50
+    - cron: '20 13 * * *'   # KST 22:20
+    - cron: '50 13 * * *'   # KST 22:50
+    - cron: '20 14 * * *'   # KST 23:20
+    - cron: '50 14 * * *'   # KST 23:50
+  workflow_dispatch:
+    inputs:
+      manual_date:
+        description: '수동 처리할 시행일자 (YYYYMMDD, 비우면 자동 백필)'
+        required: false
+        default: ''
+
+# ★겹침 방지: 앞 실행(예: 반기 시행일 390건 = 90분)이 도는 중이면 새 크론은 대기
+concurrency:
+  group: qradar-daily
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150   # 반기 시행일(390건≈90분) 여유 포함
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 필수 라이브러리 설치
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Actions 내장 토큰 — 별도 등록 불필요
+        run: |
+          python -m pip install --upgrade pip
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+          pip install -r requirements.txt
+
+      - name: Q-RADAR 실행
+        env:
+          LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          WORKNET_API_KEY: ${{ secrets.WORKNET_API_KEY }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}          # 새도우 중엔 시크릿 미등록 = 미발송
+          MANUAL_DATE: ${{ github.event.inputs.manual_date }}
+        run: python main.py
