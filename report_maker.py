@@ -11,26 +11,14 @@ from openpyxl.styles import Alignment, PatternFill, Font, Border, Side
 from config import COLUMNS, SUMMARY_COLUMNS, MAIN_SHEET_NAME, SYSTEM_NAME, WEBHOOK_URL, GCP_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_URL, TARGET_DATE
 
 # 🌟 Track 코드 → 한글 병기 (구글 시트 표기용. SQLite엔 순수 코드 유지)
-from hrdk_law_core.certs import label_track1_type, label_track1_risk, label_track2_code
 from hrdk_law_core.certs import _normalize_cert
 import re
 
-# 시트에 병기로 표기할 Track 칸 이름
-_TRACK_LABELERS = {
-    "Track1_취급유형": label_track1_type,
-    "Track1_위험도": label_track1_risk,
-    "Track2_효용코드": label_track2_code,
-}
-
 def _row_for_sheet(info, columns):
-    """COLUMNS 순서대로 행을 만들되, Track 칸은 한글 병기로 변환해 시트에 표기.
-    (info 원본은 안 건드림 → SQLite 저장은 순수 코드 유지)"""
-    row = []
-    for c in columns:
-        val = info.get(c, "")
-        labeler = _TRACK_LABELERS.get(c)
-        row.append(labeler(val) if labeler else val)
-    return row
+    """COLUMNS 순서대로 행 구성. ★Q-RADAR: Track 칸은 맨 코드(B, Ⅱ-4 …)로 기록 —
+    이관 대장과 표기 통일 (라벨 병기 'B (영업요건형)'는 구 RADAR 방식, 혼혈 방지 위해 폐지).
+    사람용 해설은 월간 브리핑 카드와 Phase 2 MCP가 코드→설명 변환으로 제공한다."""
+    return [info.get(c, "") for c in columns]
 
 # 🌟 [신설 헬퍼] 숫자를 엑셀 열 문자(1->A, 17->Q)로 변환해주는 함수
 def get_column_letter(n):
@@ -708,22 +696,45 @@ def apply_cert_rename_to_ledger(old_name, new_name):
 # ==========================================
 # 2. 엑셀 파일 생성 함수 (시트 1개로 단일화)
 # ==========================================
-def create_excel_report(target_laws, target_date=TARGET_DATE):
-    """[Q-RADAR] 일일 엑셀: ①전체 분석(24칸) ②우대 상세(우대여부=O만) 2시트."""
-    wb = Workbook()
-    ws1 = wb.active
-    ws1.title = "전체 분석"
-    ws1.append(COLUMNS)
-    for info in target_laws:
-        ws1.append(_row_for_sheet(info, COLUMNS))
-    for col in ws1.columns:
-        ws1.column_dimensions[col[0].column_letter].width = 20
+UTIL_COLS = ["MST_ID", "시행일자", "소관부처", "법령명", "개정유형", "연관도",
+             "관련 종목", "주요 제·개정내용", "활용도_구분", "활용도_상세",
+             "근거조문", "조문별 다이렉트 링크"]
+PREF_COLS = ["MST_ID", "시행일자", "법령명", "관련 종목", "우대분류",
+             "Track1_취급유형", "Track1_위험도", "Track2_효용코드", "중처법대상",
+             "조문 요약", "상세 분석 결과", "워크넷 실시간 구인건수", "조문별 다이렉트 링크"]
 
-    ws2 = wb.create_sheet("우대 상세")
-    ws2.append(COLUMNS)
+
+def create_excel_report(target_laws, target_date=TARGET_DATE, total_len=None):
+    """[Q-RADAR] 일일 엑셀 3탭: 총괄현황표(대시보드) / 자격활용도분석 / 우대사항분석.
+    각 탭이 자기 트랙의 컬럼만 보여준다 — 투트랙 시스템이 보고서 생김새에서 드러나게."""
+    high = sum(1 for i in target_laws if i.get("연관도") == "연관높음")
+    simple = sum(1 for i in target_laws if i.get("연관도") == "단순관련")
+    prefs = [i for i in target_laws if str(i.get("우대여부", "")).strip() == "O"]
+
+    wb = Workbook()
+    ws0 = wb.active
+    ws0.title = "총괄현황표"
+    ws0.append(["시행일자", "총 검토건수", "연관높음", "단순관련", "우대건수", "생성시각(KST)"])
+    if target_date and len(str(target_date)) == 8:
+        disp = f"{str(target_date)[:4]}-{str(target_date)[4:6]}-{str(target_date)[6:]}"
+    else:
+        disp = str(target_date)
+    now_kst = datetime.now(timezone(timedelta(hours=9))).strftime("%m/%d %H:%M")
+    ws0.append([disp, total_len if total_len is not None else "", high, simple, len(prefs), now_kst])
+    for w, letter in zip([14, 12, 10, 10, 10, 16], "ABCDEF"):
+        ws0.column_dimensions[letter].width = w
+
+    ws1 = wb.create_sheet("자격활용도분석")
+    ws1.append(UTIL_COLS)
     for info in target_laws:
-        if str(info.get("우대여부", "")).strip() == "O":
-            ws2.append(_row_for_sheet(info, COLUMNS))
+        ws1.append(_row_for_sheet(info, UTIL_COLS))
+    for col in ws1.columns:
+        ws1.column_dimensions[col[0].column_letter].width = 22
+
+    ws2 = wb.create_sheet("우대사항분석")
+    ws2.append(PREF_COLS)
+    for info in prefs:
+        ws2.append(_row_for_sheet(info, PREF_COLS))
     for col in ws2.columns:
         ws2.column_dimensions[col[0].column_letter].width = 20
 

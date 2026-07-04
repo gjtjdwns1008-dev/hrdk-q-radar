@@ -268,7 +268,7 @@ def process_one_day(target_date: str, kb, qnet_certs_text: str, run_note: str = 
                 print(f"  ⚠️ SQLite 저장 실패 ({law_info.get('법령명', '')}): {e}")
 
     print("📊 엑셀 보고서 생성...")
-    excel_filename = create_excel_report(target_laws)
+    excel_filename = create_excel_report(target_laws, target_date=target_date, total_len=len(laws))
     print("🚀 웹훅 전송...")
     _high = sum(1 for r in target_laws if r.get("연관도") == "연관높음")
     _simple = sum(1 for r in target_laws if r.get("연관도") == "단순관련")
