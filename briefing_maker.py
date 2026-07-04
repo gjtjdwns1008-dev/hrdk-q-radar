@@ -39,6 +39,7 @@ from collections import Counter
 from hrdk_law_core.sheets import get_sheet_client
 # Gemini 호출도 기존 모델 추상화 모듈 재사용 (모델 교체 가능)
 from hrdk_law_core.llm_client import get_llm_client
+from hrdk_law_core.certs import TRACK1_TYPE_KO, TRACK1_RISK_KO, TRACK2_CODE_KO
 
 # 프롬프트는 별도 파일에서
 from briefing_prompts import (
@@ -279,11 +280,31 @@ def _code(v):
     return str(v or "").strip().split(" ")[0].split("(")[0].strip()
 
 
+def _no_krivet(s):
+    """내부 보고서용: '(직능연)' '직능연 기준' 등 출처 표기를 지운다."""
+    t = re.sub(r"[\(\[〔（][^\)\]〕）]*직능연[^\)\]〕）]*[\)\]〕）]", "", str(s or ""))
+    t = re.sub(r"직능연\s*(기준|출처)?\s*[:：]?", "", t)
+    return re.sub(r"\s{2,}", " ", t).strip(" ,·/|-")
+
+
+def _cut_sent(s, limit):
+    """limit 안에서 문장 경계('다.' 등)로 자른다 — 중간 절단 방지."""
+    s = str(s or "").strip()
+    if len(s) <= limit:
+        return s
+    cut = s[:limit]
+    for mark in ("다.", "."):
+        i = cut.rfind(mark)
+        if i >= limit * 0.5:
+            return cut[:i + len(mark)]
+    return cut.rstrip() + "…"
+
+
 def make_pref_foreword(preferred, target_month):
     """제2부 우대 총평 — 제1부 총평과 대구 (LLM 실패 시 통계 문장 폴백)"""
     if not preferred:
         return ""
-    dist = Counter(str(r.get("우대분류", "")).strip() or "기타" for r in preferred)
+    dist = Counter(_no_krivet(r.get("우대분류", "")) or "기타" for r in preferred)
     risky = [r.get("법령명", "") for r in preferred
              if _code(r.get("Track1_위험도", "")) in ("C", "H")]
     fallback = (f"이달 국가기술자격 우대 조항 신설·변경은 총 {len(preferred)}건으로, "
@@ -527,7 +548,7 @@ def build_briefing_docx(target_month, total_laws, related_count,
     _toc = [
         ("개요·모니터링 요약", "이달의 숫자를 한눈에"),
         ("제1부  자격 활용도 동향", f"핵심 이슈 {len(issues)}건 심층 분석 + 분포 차트"),
-        ("제2부  자격 우대사항 동향", f"우대 신설·변경 {len(preferred)}건 — 분포·정책·구직자 관점 심층"),
+        ("제2부  자격 우대사항 동향", f"핵심 사례 {min(5, len(preferred))}건 심층 분석 + 정책·구직자 관점"),
         ("붙임  월간 상세목록(xlsx)", "총괄현황표 / 자격활용도분석 / 우대사항분석"),
     ]
     for _t, _d in _toc:
@@ -633,11 +654,32 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
         _run(p, pref_foreword, size=10.5, color=DARKGRAY)
         doc.add_paragraph()
 
+    # ── 분류체계 안내 — 내부 독자용 읽는 법 (core 정의 사전에서 동적 생성) ──
+    p = doc.add_paragraph(); _run(p, "■ 분류체계 안내 — Track 1·2 읽는 법", size=12, color=BLUE, bold=True)
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+    _run(p, "· Track 1 (정책 관점) — 법령이 자격을 다루는 방식", size=10, color=NAVY, bold=True)
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.8)
+    _run(p, "취급유형  " + "  ·  ".join(f"{k} {v}" for k, v in TRACK1_TYPE_KO.items() if k != "Z"), size=9, color=GRAY)
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.8)
+    _run(p, "위험도  " + "  ·  ".join(f"{k} {TRACK1_RISK_KO[k]}" for k in ("C", "H", "M", "L", "N") if k in TRACK1_RISK_KO)
+         + "   ※ 경력이음 정합성 신호", size=9, color=GRAY)
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+    _run(p, "· Track 2 (구직자 관점) — 취득자에게 생기는 노동시장 실익", size=10, color=NAVY, bold=True)
+    _t2grp = {}
+    for k, v in TRACK2_CODE_KO.items():
+        _t2grp.setdefault(k.split("-")[0], []).append(f"{k} {v}")
+    for g, gname in (("Ⅰ", "직업창출"), ("Ⅱ", "취업관문"), ("Ⅲ", "부가우대")):
+        if g in _t2grp:
+            p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.8)
+            _run(p, f"{g} {gname}  ", size=9, color=NAVY, bold=True)
+            _run(p, "  ·  ".join(_t2grp[g]), size=9, color=GRAY)
+    doc.add_paragraph()
+
     p = doc.add_paragraph(); _run(p, "■ 이달의 우대 분포", size=12, color=BLUE, bold=True)
-    dist = Counter(str(r.get("우대분류", "")).strip() or "기타" for r in preferred)
+    dist = Counter(_no_krivet(r.get("우대분류", "")) or "기타" for r in preferred)
     rep = {}
     for r in preferred:
-        rep.setdefault(str(r.get("우대분류", "")).strip() or "기타", r.get("법령명", ""))
+        rep.setdefault(_no_krivet(r.get("우대분류", "")) or "기타", r.get("법령명", ""))
     tbl = doc.add_table(rows=1 + len(dist), cols=3)
     tbl.alignment = 1
     for j, h in enumerate(("우대분류", "건수", "대표 법령")):
@@ -697,7 +739,7 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
     doc.add_paragraph()
     p = doc.add_paragraph(); _run(p, "■ 주요 사례", size=12, color=BLUE, bold=True)
     _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
-    top = sorted(preferred, key=lambda x: (_PORD.get(str(x.get("우대분류", "")).strip(), 9),
+    top = sorted(preferred, key=lambda x: (_PORD.get(_no_krivet(x.get("우대분류", "")), 9),
                                            str(x.get("법령명", ""))))[:5]
     for i, r in enumerate(top, 1):
         doc.add_paragraph()
@@ -706,7 +748,7 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
         if str(r.get("중처법대상", "")).strip() == "대상":
             _run(p, "   ⚠ 중처법 연계", size=9.5, color=RGBColor(0xB0, 0x30, 0x30), bold=True)
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-        _run(p, f"[{str(r.get('우대분류', '')).strip() or '기타'}] ", size=10, color=BLUE, bold=True)
+        _run(p, f"[{_no_krivet(r.get('우대분류', '')) or '기타'}] ", size=10, color=BLUE, bold=True)
         _run(p, _summarize_certs(r.get("관련 종목", "")), size=10)
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
         _run(p, f"취급 {r.get('Track1_취급유형', '')} · 위험 {r.get('Track1_위험도', '')} · 효용 {r.get('Track2_효용코드', '')}",
@@ -714,11 +756,11 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
         summ = str(r.get("조문 요약", "")).strip()
         if summ:
             p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-            _run(p, summ[:200], size=9.5, color=DARKGRAY)
+            _run(p, _cut_sent(summ, 700), size=9.5, color=DARKGRAY)
         det = str(r.get("상세 분석 결과", "")).strip()
         if det:
             p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-            _run(p, "→ " + det[:150], size=9, color=GRAY, italic=True)
+            _run(p, "→ " + _cut_sent(det, 500), size=9, color=GRAY, italic=True)
 
 
 def _build_summary_table(doc, issues):
@@ -953,7 +995,7 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path, preferr
 
     _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
     for i, r in enumerate(sorted(preferred,
-                                 key=lambda x: (_PORD.get(str(x.get("우대분류", "")).strip(), 9),
+                                 key=lambda x: (_PORD.get(_no_krivet(x.get("우대분류", "")), 9),
                                                 str(x.get("법령명", "")))), 1):
         row = 2 + i
         d = norm_date(r.get("시행일자", ""))
@@ -964,13 +1006,13 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path, preferr
         c2.font = XLFont(name=FONT, size=9, color=LINKBLUE, underline="single")
         c2.alignment = left; c2.border = border
         body(ws3.cell(row=row, column=3, value=df), align=center)
-        body(ws3.cell(row=row, column=4, value=str(r.get("우대분류", "")).strip()), align=center)
+        body(ws3.cell(row=row, column=4, value=_no_krivet(r.get("우대분류", ""))), align=center)
         body(ws3.cell(row=row, column=5, value=str(r.get("관련 종목", ""))[:150]), align=left)
         body(ws3.cell(row=row, column=6, value=r.get("Track1_취급유형", "")), align=center)
         body(ws3.cell(row=row, column=7, value=r.get("Track1_위험도", "")), align=center)
         body(ws3.cell(row=row, column=8, value=r.get("Track2_효용코드", "")), align=center)
         body(ws3.cell(row=row, column=9, value=r.get("중처법대상", "")), align=center)
-        body(ws3.cell(row=row, column=10, value=str(r.get("조문 요약", ""))[:250]), align=left)
+        body(ws3.cell(row=row, column=10, value=_cut_sent(r.get("조문 요약", ""), 400)), align=left)
         ws3.row_dimensions[row].height = 44
     ws3.freeze_panes = "A3"
 
