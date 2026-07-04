@@ -1091,7 +1091,7 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path, preferr
 # ============================================================
 # [4] 웹훅으로 두 파일 첨부 발송 (Make.com → 메일)
 # ============================================================
-def send_via_webhook(target_month, docx_path, xlsx_path, stats):
+def send_via_webhook(target_month, docx_path, xlsx_path, stats, pdf_path=None):
     if not WEBHOOK_URL:
         print("ℹ️ BRIEFING_WEBHOOK_URL이 없어 메일 발송을 건너뜁니다. (로컬 테스트 모드)")
         return
@@ -1109,6 +1109,7 @@ def send_via_webhook(target_month, docx_path, xlsx_path, stats):
     }
     files = {}
     fh1 = open(docx_path, "rb"); fh2 = open(xlsx_path, "rb")
+    fh3 = open(pdf_path, "rb") if (pdf_path and os.path.exists(pdf_path)) else None
     try:
         files = {
             "file1": (os.path.basename(docx_path), fh1,
@@ -1116,12 +1117,16 @@ def send_via_webhook(target_month, docx_path, xlsx_path, stats):
             "file2": (os.path.basename(xlsx_path), fh2,
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         }
+        if fh3:
+            files["file3"] = (os.path.basename(pdf_path), fh3, "application/pdf")
         requests.post(WEBHOOK_URL, data=data, files=files, timeout=60)
         print("   ✅ 발송 완료")
     except Exception as e:
         print(f"   ⚠️ 발송 실패: {e}")
     finally:
         fh1.close(); fh2.close()
+        if fh3:
+            fh3.close()
 
 
 # ============================================================
@@ -1162,6 +1167,16 @@ def main():
                         field_chart_path=field_chart_path, preferred=preferred, pref_foreword=pref_foreword)
     build_monitor_xlsx(TARGET_MONTH, total_laws, high, simple, xlsx_path, preferred=preferred)
 
+    pdf_path = f"/tmp/이슈브리핑_{TARGET_MONTH}.pdf"
+    try:
+        from briefing_pdf import build_briefing_pdf
+        build_briefing_pdf(TARGET_MONTH, total_laws, related_count, len(high), len(simple),
+                           foreword, issues, preferred, pref_foreword,
+                           chart_path, field_chart_path, pdf_path)
+    except Exception as e:
+        print(f"⚠️ PDF 디자인판 생성 건너뜀({e}) — docx·xlsx는 정상 진행")
+        pdf_path = None
+
     # GitHub Actions가 가져갈 수 있게 현재 폴더에도 복사
     import shutil
     out_dir = os.environ.get("OUTPUT_DIR", ".")
@@ -1170,11 +1185,13 @@ def main():
     final_xlsx = os.path.join(out_dir, os.path.basename(xlsx_path))
     shutil.copy(docx_path, final_docx)
     shutil.copy(xlsx_path, final_xlsx)
+    if pdf_path and os.path.exists(pdf_path):
+        shutil.copy(pdf_path, os.path.join(out_dir, os.path.basename(pdf_path)))
     print(f"\n📁 생성 완료: {final_docx}, {final_xlsx}")
 
     # 4) 발송
     send_via_webhook(TARGET_MONTH, final_docx, final_xlsx,
-                     {"total": total_laws, "related": related_count, "big": big_increase, "preferred": len(preferred)})
+                     {"total": total_laws, "related": related_count, "big": big_increase, "preferred": len(preferred)}, pdf_path=pdf_path)
 
     print("=" * 50 + "\n✨ 이슈브리핑 생성 완료!")
 
