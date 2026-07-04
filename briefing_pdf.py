@@ -180,7 +180,7 @@ _CSS = """
   .imp { font-size:8.9pt; color:#444; line-height:1.6; margin:1mm 0; }
   .imp b { color:#1F3864; }
   .blk { font-size:8.6pt; color:#4A5462; line-height:1.55; margin-top:1.4mm; }
-  .blk b { color:#1F3864; }
+  .blk b { color:#E8702A; }
   .why { margin-top:2mm; font-size:8.3pt; color:#1F3864; background:#F4F7FB;
          border-left:1.6mm solid #FFD166; padding:1.4mm 2.6mm; border-radius:0 2mm 2mm 0; }
 """
