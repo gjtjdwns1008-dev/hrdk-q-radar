@@ -71,14 +71,15 @@ def _img_uri(path):
 
 # ── CSS (시안 v2 상속 + 본문 확장) ──────────────────────────────────
 _CSS = """
-  @page { size: A4; margin: 0;
+  @page cover { size: A4; margin: 0; }
+  @page content { size: A4; margin: 13mm 14mm 16mm;
           @bottom-right { content: "Q-RADAR · " counter(page) " / " counter(pages);
-                          font-size: 8pt; color: #98A0AA; margin: 0 14mm 8mm 0;
+                          font-size: 8pt; color: #98A0AA;
                           font-family: 'Noto Sans CJK KR', sans-serif; } }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Noto Sans CJK KR','Noto Sans KR',sans-serif; color:#222; }
-  .cover { width:210mm; height:297mm; position:relative; page-break-after:always; overflow:hidden; }
-  .body { padding:14mm 16mm 18mm; }
+  .cover { page: cover; width:210mm; height:297mm; position:relative; page-break-after:always; overflow:hidden; }
+  .body { page: content; }
   .navy { color:#1F3864; }
 
   .hero { background:#1F3864; color:#fff; padding:22mm 18mm 14mm; height:118mm; position:relative; }
@@ -130,6 +131,9 @@ _CSS = """
         line-height:1.6; color:#3A4454; }
   .charts img { width:48.5%; margin-right:1.5%; vertical-align:top; }
 
+  .gcap { font-size:9.5pt; font-weight:900; color:#1F3864; margin:2.5mm 0 1.5mm; }
+  .tpill { display:inline-block; color:#fff; border-radius:2mm; padding:.4mm 2.2mm;
+           font-size:8pt; font-weight:900; margin-right:2mm; vertical-align:.3mm; }
   table.guide { width:100%; border-collapse:collapse; font-size:8.4pt; }
   .guide th { background:#1F3864; color:#fff; padding:2mm 2.4mm; text-align:left; font-weight:700; }
   .guide td { padding:1.8mm 2.4mm; border-bottom:.35mm solid #E7ECF3; color:#444; }
@@ -140,13 +144,22 @@ _CSS = """
   .bar .nm { display:inline-block; width:27mm; font-size:9pt; font-weight:700; color:#3A4454; vertical-align:middle; }
   .bar .tr { display:inline-block; width:118mm; height:5mm; background:#EFF3F8; border-radius:2.5mm;
              vertical-align:middle; position:relative; }
-  .bar .fl { height:5mm; border-radius:2.5mm; position:relative; }
+  .bar .fl { display:block; height:5mm; border-radius:2.5mm; position:relative; }
   .bar .fl .dot { right:-1mm; border-width:1mm; width:3.8mm; height:3.8mm; margin-top:-1.9mm; }
   .bar .ct { display:inline-block; width:13mm; text-align:right; font-size:10pt; font-weight:900;
              color:#1F3864; vertical-align:middle; }
 
   .chips { font-size:9pt; color:#3A4454; line-height:2.15; }
   .chips b { color:#1F3864; margin-right:1.6mm; }
+  .srow { margin:0 0 2.2mm; }
+  .slab { display:inline-block; width:20mm; font-size:8.6pt; font-weight:900; color:#5A6472;
+          vertical-align:2px; }
+  .stat { display:inline-block; background:#EDF2F9; color:#1F3864; border-radius:2.2mm;
+          padding:.8mm 2.6mm; font-size:8.6pt; margin:0 1.4mm 1.2mm 0; }
+  .stat b { font-weight:900; }
+  .stat .n { font-weight:900; font-size:9.6pt; margin-left:1.2mm; }
+  .stat.t2 { background:#FBECEC; color:#B03A3A; }
+  .stat.gy { background:#F1F3F6; color:#4A5462; }
   .chip { display:inline-block; padding:.5mm 2.4mm; border-radius:3mm; color:#fff; font-size:8pt;
           font-weight:700; margin-right:1.4mm; }
 
@@ -172,17 +185,19 @@ _CSS = """
          border-left:1.6mm solid #FFD166; padding:1.4mm 2.6mm; border-radius:0 2mm 2mm 0; }
 """
 
-_GUIDE_T1 = [
-    ("취급유형", "A 신분형성형", "자격 취득자만 해당 명칭·신분을 사용할 수 있음"),
-    ("", "B 영업요건형", "기업이 사업을 등록·지정받으려면 자격자 고용이 요건"),
-    ("", "C 직역독점형", "특정 업무·행위는 자격자만 수행 가능"),
-    ("", "D 인사가산형", "채용·보수·승진 등에서 가점 부여"),
-    ("", "E 검정연계형", "다른 시험의 응시자격 부여 또는 과목 면제"),
-    ("위험도", "C 임계위험", "오직 단일 자격만 인정하고 대체 경로가 전혀 없음"),
-    ("", "H 고위험", "'자격 + 경력 N년'을 동시에 요구"),
-    ("", "M 중위험", "복수의 자격을 OR 조건으로 대체 가능"),
-    ("", "L 저위험", "관련 학과 졸업 + 경력 등으로 진입 우회 가능"),
-    ("", "N 무관", "직역 진입을 막지 않는 단순 부가우대"),
+_T1_TYPE = [
+    ("A 신분형성형", "자격 취득자만 해당 명칭·신분을 사용할 수 있음"),
+    ("B 영업요건형", "기업이 사업을 등록·지정받으려면 자격자 고용이 요건"),
+    ("C 직역독점형", "특정 업무·행위는 자격자만 수행 가능"),
+    ("D 인사가산형", "채용·보수·승진 등에서 가점 부여"),
+    ("E 검정연계형", "다른 시험의 응시자격 부여 또는 과목 면제"),
+]
+_T1_RISK = [
+    ("C 임계위험", "오직 단일 자격만 인정하고 대체 경로가 전혀 없음"),
+    ("H 고위험", "'자격 + 경력 N년'을 동시에 요구"),
+    ("M 중위험", "복수의 자격을 OR 조건으로 대체 가능"),
+    ("L 저위험", "관련 학과 졸업 + 경력 등으로 진입 우회 가능"),
+    ("N 무관", "직역 진입을 막지 않는 단순 부가우대"),
 ]
 _GUIDE_T2 = [
     ("Ⅰ 직업창출", "Ⅰ-1 면허전환형", "자격 취득이 행정청 면허 발급으로 이어져 평생 직업·신분 부여"),
@@ -198,15 +213,26 @@ _GUIDE_T2 = [
 ]
 
 
-def _guide_table(rows):
-    tr = ['<tr><th style="width:20mm">구분</th><th style="width:36mm">코드·명칭</th><th>의미</th></tr>']
-    for g, c, d in rows:
-        tr.append(f'<tr><td class="g">{esc(g)}</td><td class="c">{esc(c)}</td><td>{esc(d)}</td></tr>')
-    return '<table class="guide">' + "".join(tr) + "</table>"
+def _guide_table(caption, pill, pill_bg, rows, grouped=False):
+    """캡션(Track 배지) + 표. grouped=True면 구분 열 포함 3열, 아니면 2열."""
+    cap = (f'<div class="gcap"><span class="tpill" style="background:{pill_bg}">{esc(pill)}</span>'
+           f'{esc(caption)}</div>')
+    if grouped:
+        tr = ['<tr><th style="width:22mm">구분</th><th style="width:34mm">코드·명칭</th><th>의미</th></tr>']
+        for g, c, d in rows:
+            tr.append(f'<tr><td class="g">{esc(g)}</td><td class="c">{esc(c)}</td><td>{esc(d)}</td></tr>')
+    else:
+        tr = ['<tr><th style="width:34mm">코드·명칭</th><th>의미</th></tr>']
+        for c, d in rows:
+            tr.append(f'<tr><td class="c">{esc(c)}</td><td>{esc(d)}</td></tr>')
+    return cap + '<table class="guide">' + "".join(tr) + "</table>"
 
 
 def _cover(target_month, total_laws, related_count, high_n, simple_n, preferred, issues_n):
     year, month = target_month[:4], str(int(target_month[4:6]))
+    has_total = bool(total_laws) and total_laws > related_count
+    total_txt = f"{total_laws:,}" if has_total else "&#8212;"
+    total_sub = "법제처 일일 자동 수집" if has_total else "당월 전수 집계 없음 · 일일 집계로 자동 축적"
     risky_n = sum(1 for r in preferred if _code(r.get("Track1_위험도", "")) in ("C", "H"))
     pref_n = len(preferred)
     dots = ('<span class="dot" style="left:24%"></span><span class="dot" style="left:52%"></span>'
@@ -230,8 +256,8 @@ def _cover(target_month, total_laws, related_count, high_n, simple_n, preferred,
     </div>
   </div>
   <div class="kpis">
-    <div class="kpi"><div class="n">{total_laws:,}</div><div class="t">{esc(month)}월 시행 법령 전수 검토</div>
-      <div class="s">법제처 일일 자동 수집</div></div>
+    <div class="kpi"><div class="n">{total_txt}</div><div class="t">{esc(month)}월 시행 법령 전수 검토</div>
+      <div class="s">{esc(total_sub)}</div></div>
     <div class="kpi"><div class="n">{related_count:,}</div><div class="t">국가기술자격 관련 법령</div>
       <div class="s">연관높음 {high_n} · 단순관련 {simple_n}</div></div>
     <div class="kpi"><div class="n">{pref_n:,}</div><div class="t">자격 우대 신설·변경</div>
@@ -293,7 +319,13 @@ def _part2(preferred, pref_foreword):
     pref_n = len(preferred)
     fw = f'<div class="sect"><div class="fw">{esc(pref_foreword)}</div></div>' if pref_foreword else ""
     guide = ('<div class="sect"><h2>분류체계 안내 <em>Track 1·2 읽는 법</em></h2>'
-             + _guide_table(_GUIDE_T1) + '<div style="height:3mm"></div>' + _guide_table(_GUIDE_T2) + "</div>")
+             + _guide_table("취급유형 — 법령이 자격을 다루는 방식", "Track 1 · 정책", NAVY, _T1_TYPE)
+             + '<div style="height:2.5mm"></div>'
+             + _guide_table("위험도 — 경력이음형 자격제도와 충돌하는 정도", "Track 1 · 정책", NAVY, _T1_RISK)
+             + '<div style="height:2.5mm"></div>'
+             + _guide_table("효용코드 — 취득자에게 생기는 노동시장 실익", "Track 2 · 구직자", "#C62828",
+                            _GUIDE_T2, grouped=True)
+             + "</div>")
     if not preferred:
         return f"""
 <div class="body part">
@@ -319,12 +351,10 @@ def _part2(preferred, pref_foreword):
     grp = Counter()
     for r in preferred:
         c = _code(r.get("Track2_효용코드", ""))
-        if c.startswith("Ⅰ"):
-            grp["직업창출 Ⅰ"] += 1
-        elif c.startswith("Ⅱ"):
-            grp["취업관문 Ⅱ"] += 1
-        elif c.startswith("Ⅲ"):
-            grp["부가우대 Ⅲ"] += 1
+        for g in ("Ⅰ", "Ⅱ", "Ⅲ"):
+            if c.startswith(g):
+                grp[g] += 1
+                break
     certs = Counter()
     for r in preferred:
         for c in str(r.get("관련 종목", "")).split(","):
@@ -332,17 +362,22 @@ def _part2(preferred, pref_foreword):
             if c and c != "없음":
                 certs[c] += 1
     sap = [r for r in preferred if str(r.get("중처법대상", "")).strip() == "대상"]
-    tline = " · ".join(f"{k} {TYPE_KO[k]} <b>{ttype[k]}</b>" for k in "ABCDE" if ttype.get(k))
+    tstats = "".join(f'<span class="stat"><b>{k}</b> {TYPE_KO[k]}<span class="n">{ttype[k]}</span></span>'
+                     for k in "ABCDE" if ttype.get(k)) or "-"
     rchips = "".join(f'<span class="chip" style="background:{RISK_BG[k]}">{k} {RISK_KO[k]} {risk[k]}</span>'
-                     for k in ("C", "H", "M", "L", "N") if risk.get(k))
-    gline = " · ".join(f"{esc(k)} <b>{v}</b>" for k, v in grp.most_common()) or "-"
-    cline = ", ".join(f"{esc(k)}({v})" for k, v in certs.most_common(5)) or "-"
+                     for k in ("C", "H", "M", "L", "N") if risk.get(k)) or "-"
+    _GNAME = (("Ⅰ", "직업창출"), ("Ⅱ", "취업관문"), ("Ⅲ", "부가우대"))
+    gstats = "".join(f'<span class="stat t2"><b>{g}</b> {nm}<span class="n">{grp[g]}</span></span>'
+                     for g, nm in _GNAME if grp.get(g)) or "-"
+    cstats = "".join(f'<span class="stat gy">{esc(k)}<span class="n">{v}</span></span>'
+                     for k, v in certs.most_common(5)) or "-"
     sap_html = ""
     if sap:
         names = ", ".join(esc(str(r.get("법령명", ""))[:22]) for r in sap[:3])
         more = f" 외 {len(sap) - 3}건" if len(sap) > 3 else ""
-        sap_html = (f'<div class="chips" style="margin-top:1mm"><b>중대재해처벌법 연계</b> '
-                    f'<span class="chip b-sap">⚠ {len(sap)}건</span> {names}{more}</div>')
+        sap_html = (f'<div class="srow"><span class="slab">중처법 연계</span>'
+                    f'<span class="chip b-sap">⚠ {len(sap)}건</span> '
+                    f'<span style="font-size:8.6pt;color:#5A6472">{names}{more}</span></div>')
 
     # 사례 카드 (위험도 우선)
     _RORD = {"C": 0, "H": 1, "M": 2, "L": 3, "N": 4}
@@ -378,9 +413,11 @@ def _part2(preferred, pref_foreword):
   {guide}
   <div class="sect"><h2>이달의 우대사항 현황</h2>{''.join(bars)}</div>
   <div class="sect"><h2>분류체계 현황 <em>정책 관점 (Track 1)</em></h2>
-    <div class="chips"><b>취급유형</b> {tline}<br><b>위험도</b> {rchips}</div></div>
+    <div class="srow"><span class="slab">취급유형</span>{tstats}</div>
+    <div class="srow"><span class="slab">위험도</span>{rchips}</div></div>
   <div class="sect"><h2>분류체계 현황 <em>구직자 관점 (Track 2)</em></h2>
-    <div class="chips"><b>효용 유형</b> {gline}<br><b>다빈도 자격</b> {cline}</div>{sap_html}</div>
+    <div class="srow"><span class="slab">효용 유형</span>{gstats}</div>
+    <div class="srow"><span class="slab">다빈도 자격</span>{cstats}</div>{sap_html}</div>
   <div class="sect"><h2>주요 사례 <em>선정 기준: 위험도 상위(임계→고위험 순)</em></h2>{''.join(cards)}</div>
 </div>"""
 
@@ -390,6 +427,9 @@ def build_briefing_pdf(target_month, total_laws, related_count, high_n, simple_n
                        chart_path, field_chart_path, out_path):
     """디자인판 PDF 생성. weasyprint 부재 시 ImportError를 던져 호출부가 스킵하게 한다."""
     from weasyprint import HTML  # 지연 임포트 — 미설치 환경 보호
+    total_laws = int(total_laws or 0)
+    related_count = int(related_count or 0)
+    high_n, simple_n = int(high_n or 0), int(simple_n or 0)
     print("🎨 [4-3] 이슈브리핑 PDF 디자인판 생성 중...")
     doc = ("<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'>"
            f"<style>{_CSS}</style></head><body>"

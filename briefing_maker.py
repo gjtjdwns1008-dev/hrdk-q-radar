@@ -129,7 +129,7 @@ def fetch_month_data(target_month):
     # 총괄현황표에서 그달 '총 검토건수' 합계 = 전체 시행 법령 수
     total_laws = sum_total_reviewed(ss, target_month)
 
-    print(f"   → 전체 {total_laws}건 / 연관높음 {len(high)} / 단순관련 {len(simple)} / 우대 {len(preferred)}")
+    print(f"   → 전체 {total_laws if total_laws else '-(미집계)'}건 / 연관높음 {len(high)} / 단순관련 {len(simple)} / 우대 {len(preferred)}")
     return high, simple, preferred, total_laws
 
 
@@ -1191,7 +1191,7 @@ def main():
 
     # 4) 발송
     send_via_webhook(TARGET_MONTH, final_docx, final_xlsx,
-                     {"total": total_laws, "related": related_count, "big": big_increase, "preferred": len(preferred)}, pdf_path=pdf_path)
+                     {"total": total_laws or "-", "related": related_count, "big": big_increase, "preferred": len(preferred)}, pdf_path=pdf_path)
 
     print("=" * 50 + "\n✨ 이슈브리핑 생성 완료!")
 
