@@ -726,11 +726,17 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
     doc.add_paragraph()
 
     p = doc.add_paragraph(); _run(p, "■ 분류체계 현황 — 정책 관점 (Track 1)", size=12, color=BLUE, bold=True)
+    ttype = Counter(_code(r.get("Track1_취급유형", "")) or "-" for r in preferred)
+    tname = {"A": "신분형성", "B": "영업요건", "C": "직역독점", "D": "인사가산", "E": "검정연계"}
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+    _run(p, "· 취급유형 분포 : ", size=10.5)
+    _run(p, " · ".join(f"{k} {tname[k]} {ttype.get(k, 0)}건" for k in "ABCDE" if ttype.get(k, 0)) or "-",
+         size=10.5, color=NAVY, bold=True)
     risk = Counter(_code(r.get("Track1_위험도", "")) or "-" for r in preferred)
     name = {"C": "임계", "H": "고위험", "M": "중위험", "L": "저위험", "N": "무관"}
     p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
     _run(p, "· 위험도 분포 : ", size=10.5)
-    _run(p, " · ".join(f"{name[k]} {risk.get(k, 0)}건" for k in ("C", "H", "M", "L", "N") if risk.get(k, 0)) or "-",
+    _run(p, " · ".join(f"{k} {name[k]} {risk.get(k, 0)}건" for k in ("C", "H", "M", "L", "N") if risk.get(k, 0)) or "-",
          size=10.5, color=NAVY, bold=True)
     risky = [r for r in preferred if _code(r.get("Track1_위험도", "")) in ("C", "H")]
     if risky:
@@ -770,8 +776,12 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
 
     doc.add_paragraph()
     p = doc.add_paragraph(); _run(p, "■ 주요 사례", size=12, color=BLUE, bold=True)
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+    _run(p, "· 선정 기준 : 위험도 상위(임계 C → 고위험 H → …) — 정책 검토 우선순위 순", size=9, color=GRAY)
+    _RORD = {"C": 0, "H": 1, "M": 2, "L": 3, "N": 4}
     _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
-    top = sorted(preferred, key=lambda x: (_PORD.get(_no_krivet(x.get("우대분류", "")), 9),
+    top = sorted(preferred, key=lambda x: (_RORD.get(_code(x.get("Track1_위험도", "")), 9),
+                                           _PORD.get(_no_krivet(x.get("우대분류", "")), 9),
                                            str(x.get("법령명", ""))))[:5]
     for i, r in enumerate(top, 1):
         doc.add_paragraph()
@@ -1025,9 +1035,11 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path, preferr
         hdr(ws3.cell(row=2, column=c, value=t), fill=XLBLUE)
         ws3.column_dimensions[get_column_letter(c)].width = w
 
+    _RORD = {"C": 0, "H": 1, "M": 2, "L": 3, "N": 4}
     _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
     for i, r in enumerate(sorted(preferred,
-                                 key=lambda x: (_PORD.get(_no_krivet(x.get("우대분류", "")), 9),
+                                 key=lambda x: (_RORD.get(_code(x.get("Track1_위험도", "")), 9),
+                                                _PORD.get(_no_krivet(x.get("우대분류", "")), 9),
                                                 str(x.get("법령명", "")))), 1):
         row = 2 + i
         d = norm_date(r.get("시행일자", ""))
