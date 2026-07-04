@@ -654,7 +654,60 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
         _run(p, pref_foreword, size=10.5, color=DARKGRAY)
         doc.add_paragraph()
 
-    p = doc.add_paragraph(); _run(p, "■ 이달의 우대 분포", size=12, color=BLUE, bold=True)
+    # ── ① 분류체계 안내 — Track 1·2 읽는 법 (표 정리, brain 분석 기준 정의) ──
+    p = doc.add_paragraph(); _run(p, "■ 분류체계 안내 — Track 1·2 읽는 법", size=12, color=BLUE, bold=True)
+
+    def _guide_table(title, rows, note=None):
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+        _run(p, title, size=10, color=NAVY, bold=True)
+        t = doc.add_table(rows=1 + len(rows), cols=3)
+        t.alignment = 1
+        widths = (Cm(2.6), Cm(3.6), Cm(10.0))
+        for j, h in enumerate(("구분", "코드·명칭", "의미")):
+            c = t.rows[0].cells[j]
+            _set_cell_bg(c, "1F3864")
+            _run(c.paragraphs[0], h, size=9.5, color=RGBColor(0xFF, 0xFF, 0xFF), bold=True)
+        for i, (grp, code, desc) in enumerate(rows, 1):
+            cells = t.rows[i].cells
+            if grp:
+                _run(cells[0].paragraphs[0], grp, size=9, color=NAVY, bold=True)
+                _set_cell_bg(cells[0], "EDF2F9")
+            _run(cells[1].paragraphs[0], code, size=9, color=NAVY, bold=True)
+            _run(cells[2].paragraphs[0], desc, size=9, color=GRAY)
+        for r_ in t.rows:
+            for j, w in enumerate(widths):
+                r_.cells[j].width = w
+        if note:
+            p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+            _run(p, note, size=8.5, color=GRAY)
+        doc.add_paragraph()
+
+    _guide_table("· Track 1 (정책 관점) — 법령이 자격을 '어떻게' 다루는지", [
+        ("취급유형", "A 신분형성형", "자격 취득자만 해당 명칭·신분을 사용할 수 있음"),
+        ("", "B 영업요건형", "기업이 사업을 등록·지정받으려면 자격자 고용이 요건"),
+        ("", "C 직역독점형", "특정 업무·행위는 자격자만 수행 가능"),
+        ("", "D 인사가산형", "채용·보수·승진 등에서 가점 부여"),
+        ("", "E 검정연계형", "다른 시험의 응시자격 부여 또는 과목 면제"),
+        ("위험도", "C 임계위험", "오직 단일 자격만 인정하고 대체 경로가 전혀 없음"),
+        ("", "H 고위험", "'자격 + 경력 N년'을 동시에 요구"),
+        ("", "M 중위험", "복수의 자격을 OR 조건으로 대체 가능"),
+        ("", "L 저위험", "관련 학과 졸업 + 경력 등으로 진입 우회 가능"),
+        ("", "N 무관", "직역 진입을 막지 않는 단순 부가우대"),
+    ], note="※ 위험도 = 선경력을 요구하는 '경력이음형' 자격제도와 충돌하는 정도")
+    _guide_table("· Track 2 (구직자 관점) — 취득자에게 '무엇이' 생기는지", [
+        ("Ⅰ 직업창출", "Ⅰ-1 면허전환형", "자격 취득이 행정청 면허 발급으로 이어져 평생 직업·신분 부여"),
+        ("", "Ⅰ-2 개업창업형", "자격자 본인이 단독으로 직무 수행·서명 가능 — 1인 사업 가능"),
+        ("Ⅱ 취업관문", "Ⅱ-1 등록필수형", "사업체 등록·허가 시 자격자 보유가 의무"),
+        ("", "Ⅱ-2 지정인력형", "검사·검정·인증·진단 등 국가 지정기관의 인력 요건"),
+        ("", "Ⅱ-3 전속배치형", "해당 자격자만 선임 가능 (대체 불가)"),
+        ("", "Ⅱ-4 선택배치형", "법령이 인정하는 복수 자격 중 택일 선임"),
+        ("", "Ⅱ-5 현장배치형", "공사·사업장 규모·종별에 따라 현장 단위 배치 의무"),
+        ("Ⅲ 부가우대", "Ⅲ-1 시험면제", "다른 자격·시험의 응시요건 완화나 과목 면제"),
+        ("", "Ⅲ-2 인사우대", "채용·승진·보수에서의 가점·우대"),
+        ("", "Ⅲ-3 위촉·자문", "위원 위촉, 자문·심의 참여 자격 부여"),
+    ])
+
+    p = doc.add_paragraph(); _run(p, "■ 이달의 우대사항 현황", size=12, color=BLUE, bold=True)
     dist = Counter(_no_krivet(r.get("우대분류", "")) or "기타" for r in preferred)
     rep = {}
     for r in preferred:
@@ -672,60 +725,7 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
         _run(row[2].paragraphs[0], str(rep.get(k, ""))[:34], size=9.5)
     doc.add_paragraph()
 
-    # ── 분류체계 안내 — Track 1·2 읽는 법 (brain 분석 기준 정의 원문 기반) ──
-    p = doc.add_paragraph(); _run(p, "■ 분류체계 안내 — Track 1·2 읽는 법", size=12, color=BLUE, bold=True)
-    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
-    _run(p, "· Track 1 (정책 관점) — 법령이 자격을 '어떻게' 다루는지", size=10, color=NAVY, bold=True)
-    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-    _run(p, "취급유형", size=9.5, color=NAVY, bold=True)
-    for _c, _nm, _d in (
-        ("A", "신분형성형", "자격 취득자만 해당 명칭·신분을 사용할 수 있음"),
-        ("B", "영업요건형", "기업이 사업을 등록·지정받으려면 자격자 고용이 요건"),
-        ("C", "직역독점형", "특정 업무·행위는 자격자만 수행 가능"),
-        ("D", "인사가산형", "채용·보수·승진 등에서 가점 부여"),
-        ("E", "검정연계형", "다른 시험의 응시자격 부여 또는 과목 면제"),
-    ):
-        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.9)
-        _run(p, f"{_c} {_nm}", size=9, color=NAVY, bold=True)
-        _run(p, f"  —  {_d}", size=9, color=GRAY)
-    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-    _run(p, "위험도", size=9.5, color=NAVY, bold=True)
-    _run(p, "  — 선경력을 요구하는 경력이음형 자격제도와 충돌하는 정도", size=9, color=GRAY)
-    for _c, _nm, _d in (
-        ("C", "임계위험", "오직 단일 자격만 인정하고 대체 경로가 전혀 없음"),
-        ("H", "고위험", "'자격 + 경력 N년'을 동시에 요구"),
-        ("M", "중위험", "복수의 자격을 OR 조건으로 대체 가능"),
-        ("L", "저위험", "관련 학과 졸업 + 경력 등으로 진입 우회 가능"),
-        ("N", "무관", "직역 진입을 막지 않는 단순 부가우대"),
-    ):
-        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.9)
-        _run(p, f"{_c} {_nm}", size=9, color=NAVY, bold=True)
-        _run(p, f"  —  {_d}", size=9, color=GRAY)
-    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
-    _run(p, "· Track 2 (구직자 관점) — 취득자에게 '무엇이' 생기는지", size=10, color=NAVY, bold=True)
-    _t2 = (
-        ("Ⅰ-1", "면허전환형", "자격 취득이 행정청 면허 발급으로 이어져 평생 직업·신분 부여"),
-        ("Ⅰ-2", "개업창업형", "자격자 본인이 단독으로 직무 수행·서명 가능 — 1인 사업 가능"),
-        ("Ⅱ-1", "등록필수형", "사업체 등록·허가 시 자격자 보유가 의무"),
-        ("Ⅱ-2", "지정인력형", "검사·검정·인증·진단 등 국가 지정기관의 인력 요건"),
-        ("Ⅱ-3", "전속배치형", "해당 자격자만 선임 가능 (대체 불가)"),
-        ("Ⅱ-4", "선택배치형", "법령이 인정하는 복수 자격 중 택일 선임"),
-        ("Ⅱ-5", "현장배치형", "공사·사업장 규모·종별에 따라 현장 단위 배치 의무"),
-        ("Ⅲ-1", "시험면제", "다른 자격·시험의 응시요건 완화나 과목 면제"),
-        ("Ⅲ-2", "인사우대", "채용·승진·보수에서의 가점·우대"),
-        ("Ⅲ-3", "위촉·자문", "위원 위촉, 자문·심의 참여 자격 부여"),
-    )
-    for _g, _gname in (("Ⅰ", "직업창출"), ("Ⅱ", "취업관문"), ("Ⅲ", "부가우대")):
-        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-        _run(p, f"{_g} {_gname}", size=9.5, color=NAVY, bold=True)
-        for _c, _nm, _d in _t2:
-            if _c.startswith(_g):
-                p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.9)
-                _run(p, f"{_c} {_nm}", size=9, color=NAVY, bold=True)
-                _run(p, f"  —  {_d}", size=9, color=GRAY)
-    doc.add_paragraph()
-
-    p = doc.add_paragraph(); _run(p, "■ 정책 관점 — 경력이음 정합성 (Track 1)", size=12, color=BLUE, bold=True)
+    p = doc.add_paragraph(); _run(p, "■ 분류체계 현황 — 정책 관점 (Track 1)", size=12, color=BLUE, bold=True)
     risk = Counter(_code(r.get("Track1_위험도", "")) or "-" for r in preferred)
     name = {"C": "임계", "H": "고위험", "M": "중위험", "L": "저위험", "N": "무관"}
     p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
@@ -739,7 +739,7 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
         _run(p, ", ".join(str(r.get("법령명", ""))[:24] for r in risky[:4])
              + (f" 외 {len(risky) - 4}건" if len(risky) > 4 else ""), size=10)
 
-    p = doc.add_paragraph(); _run(p, "■ 구직자 관점 — 노동시장 효용 (Track 2)", size=12, color=BLUE, bold=True)
+    p = doc.add_paragraph(); _run(p, "■ 분류체계 현황 — 구직자 관점 (Track 2)", size=12, color=BLUE, bold=True)
     grp = Counter()
     for r in preferred:
         c = _code(r.get("Track2_효용코드", ""))
