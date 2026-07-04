@@ -226,36 +226,56 @@ def _ask_with_search(prompt, temperature=0.2):
         return _ask(prompt, temperature=temperature)
 
 
-def select_top_laws(big_laws, top_n=TOP_N):
-    """대폭 증감 법령 중 핵심 N건 선별. 적으면 있는 만큼."""
-    print(f"🧠 [2-1] 대폭 증감 {len(big_laws)}건 중 핵심 {top_n}건 선별 중...")
-    if len(big_laws) <= top_n:
-        return big_laws  # 후보가 적으면 전부 사용
+def _select_rank_key(r):
+    """결정적 정렬: ① 대폭 감소 우선(정책 대응 시급) ② 관련 종목 수 많은 순(파급 범위) ③ 법령명"""
+    certs = [c for c in str(r.get("관련 종목", "")).split(",") if c.strip() and c.strip() != "없음"]
+    return (0 if r.get("활용도_구분", "") == "대폭 감소" else 1, -len(certs), str(r.get("법령명", "")))
 
-    candidates = [
-        {"id": i, "법령명": r.get("법령명", ""),
-         "관련자격": r.get("관련 종목", ""),
-         "활용도": r.get("활용도_구분", "")}
-        for i, r in enumerate(big_laws)
-    ]
-    prompt = SELECT_TOP_PROMPT.format(
-        persona=PERSONA, top_n=top_n,
-        candidates=json.dumps(candidates, ensure_ascii=False)
-    )
-    raw = _ask(prompt, temperature=0.0)
-    # 응답에서 [숫자, 숫자, ...] 배열만 추출
-    match = re.search(r"\[(.*?)\]", raw, re.DOTALL)
-    if match:
-        try:
-            ids = json.loads(f"[{match.group(1)}]")
-            picked = [big_laws[i] for i in ids if isinstance(i, int) and i < len(big_laws)]
-            if picked:
-                return picked[:top_n]
-        except Exception:
-            pass
-    # AI 실패 시 안전장치: 그냥 앞 N건
-    print("   ⚠️ 선별 응답 파싱 실패 → 앞 N건으로 대체")
-    return big_laws[:top_n]
+
+def _auto_reason(r):
+    n = len([c for c in str(r.get("관련 종목", "")).split(",") if c.strip() and c.strip() != "없음"])
+    return f"{r.get('활용도_구분', '')} · 관련 종목 {n}개 파급"
+
+
+def select_top_laws(big_laws, top_n=TOP_N):
+    """[C안] 결정적 압축 → AI가 N건 + 선정 사유 → 실패 시 결정적 상위 N (앞N건 폴백 폐지)."""
+    print(f"🧠 [2-1] 대폭 증감 {len(big_laws)}건 중 핵심 {top_n}건 선별 중... (C안: 압축+AI사유)")
+    ranked = sorted(big_laws, key=_select_rank_key)
+    if len(ranked) <= top_n:
+        for r in ranked:
+            r["_선정사유"] = r.get("_선정사유") or _auto_reason(r)
+        return ranked
+    pool = ranked[:max(top_n + 3, 8)]
+    candidates = [{"id": i, "법령명": r.get("법령명", ""), "활용도": r.get("활용도_구분", ""),
+                   "관련자격": str(r.get("관련 종목", ""))[:120],
+                   "주요내용": str(r.get("주요 제·개정내용", ""))[:160]}
+                  for i, r in enumerate(pool)]
+    try:
+        raw = _ask(SELECT_TOP_PROMPT.format(persona=PERSONA, top_n=top_n,
+                                            candidates=json.dumps(candidates, ensure_ascii=False)),
+                   temperature=0.0)
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        items = json.loads(m.group(0)) if m else []
+        picked = []
+        for it in items:
+            if isinstance(it, dict) and isinstance(it.get("id"), int) and 0 <= it["id"] < len(pool):
+                r = pool[it["id"]]
+                r["_선정사유"] = _clean_citations(str(it.get("reason", ""))).strip() or _auto_reason(r)
+                if r not in picked:
+                    picked.append(r)
+            elif isinstance(it, int) and 0 <= it < len(pool):  # 구형 [1,2,…] 응답 호환
+                r = pool[it]
+                r["_선정사유"] = _auto_reason(r)
+                if r not in picked:
+                    picked.append(r)
+        if picked:
+            return picked[:top_n]
+    except Exception:
+        pass
+    print("   ⚠️ AI 선별 실패 → 결정적 상위 N건 (감소 우선·종목 수 순)")
+    for r in pool[:top_n]:
+        r["_선정사유"] = r.get("_선정사유") or _auto_reason(r)
+    return pool[:top_n]
 
 
 def make_foreword(selected, target_month):
@@ -845,6 +865,11 @@ def _build_detail_card(doc, i, it):
     _shade_paragraph(p, "D6E2F0")
     # 파급효과
     p = doc.add_paragraph(); _run(p, "▣ 자격증 파급효과", size=10, color=BLUE, bold=True)
+    reason = str(it.get("_선정사유", "")).strip()
+    if reason:
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.2)
+        _run(p, "선정 사유  ", size=8.5, color=NAVY, bold=True)
+        _run(p, reason, size=8.5, color=GRAY)
     for k, line in enumerate(it.get("impact_3lines", []), 1):
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
         _run(p, f"{k}. ", size=9.5, color=NAVY, bold=True); _run(p, line, size=9.5)
