@@ -274,6 +274,33 @@ def make_foreword(selected, target_month):
     return text
 
 
+def _code(v):
+    """'B (영업요건형)' → 'B' — 라벨 병기 값에서 코드만 추출"""
+    return str(v or "").strip().split(" ")[0].split("(")[0].strip()
+
+
+def make_pref_foreword(preferred, target_month):
+    """제2부 우대 총평 — 제1부 총평과 대구 (LLM 실패 시 통계 문장 폴백)"""
+    if not preferred:
+        return ""
+    dist = Counter(str(r.get("우대분류", "")).strip() or "기타" for r in preferred)
+    risky = [r.get("법령명", "") for r in preferred
+             if _code(r.get("Track1_위험도", "")) in ("C", "H")]
+    fallback = (f"이달 국가기술자격 우대 조항 신설·변경은 총 {len(preferred)}건으로, "
+                + ", ".join(f"{k} {v}건" for k, v in dist.most_common()) + "이 확인되었다."
+                + (f" 이 중 {len(risky)}건은 경력이음형 자격제도와의 정합성 검토가 필요한 임계·고위험 유형이다." if risky else ""))
+    prompt = f"""당신은 한국산업인력공단의 자격정책 분석관입니다. {target_month[:4]}년 {int(target_month[4:6])}월
+국가기술자격 취득자 우대 조항 신설·변경 현황을 보고서 문체 2~3문장으로 총평하세요.
+- 총 {len(preferred)}건 / 우대분류 분포: {dict(dist.most_common())}
+- 경력이음 정합성 주의(임계 C·고위험 H): {len(risky)}건 {risky[:3]}
+과장 없이 담백하게, 문장만 출력하세요."""
+    try:
+        out = _clean_citations(_ask(prompt)).strip()
+        return out if out else fallback
+    except Exception:
+        return fallback
+
+
 def make_details(selected):
     """선별된 법령별 상세(파급효과/배경/내용/효과) 작성."""
     print(f"🧠 [2-3] 핵심 {len(selected)}건 상세 분석 작성 중...")
@@ -464,7 +491,7 @@ def _run(p, text, size=11, color=None, bold=False, italic=False):
 
 def build_briefing_docx(target_month, total_laws, related_count,
                         big_increase, foreword, issues, chart_path, out_path,
-                        field_chart_path=None, preferred=None):
+                        field_chart_path=None, preferred=None, pref_foreword=""):
     preferred = preferred or []
     print("📄 [4-1] 이슈브리핑 docx 생성 중...")
     year, month = target_month[:4], str(int(target_month[4:6]))
@@ -500,7 +527,7 @@ def build_briefing_docx(target_month, total_laws, related_count,
     _toc = [
         ("개요·모니터링 요약", "이달의 숫자를 한눈에"),
         ("제1부  자격 활용도 동향", f"핵심 이슈 {len(issues)}건 심층 분석 + 분포 차트"),
-        ("제2부  자격 우대사항 동향", f"우대 신설·변경 {len(preferred)}건 + 채용시장 수요"),
+        ("제2부  자격 우대사항 동향", f"우대 신설·변경 {len(preferred)}건 — 분포·정책·구직자 관점 심층"),
         ("붙임  월간 상세목록(xlsx)", "총괄현황표 / 자격활용도분석 / 우대사항분석"),
     ]
     for _t, _d in _toc:
@@ -583,13 +610,13 @@ def build_briefing_docx(target_month, total_laws, related_count,
 
     # 머리말/푸터
     _add_header_footer(doc)
-    _build_pref_part(doc, preferred)
+    _build_pref_part(doc, preferred, pref_foreword)
 
     doc.save(out_path)
 
 
-def _build_pref_part(doc, preferred):
-    """제2부: 자격 우대사항 동향 — Q-RADAR 신설 챕터 (통합 대장의 우대여부=O)"""
+def _build_pref_part(doc, preferred, pref_foreword=""):
+    """제2부: 자격 우대사항 동향 — 총평 + 분포 표 + 정책(T1)·구직자(T2) 관점 + 중처법 + 사례 카드"""
     doc.add_page_break()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _run(p, "제2부  자격 우대사항 동향", size=15, color=NAVY, bold=True)
@@ -599,32 +626,99 @@ def _build_pref_part(doc, preferred):
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
         _run(p, "· 이달 신설·변경된 자격 우대 조항은 없습니다.", size=10.5)
         return
-    dist = Counter(str(r.get("우대분류", "")).strip() or "기타" for r in preferred)
-    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
-    _run(p, "· 이달 자격 취득자 우대 신설·변경 ", size=10.5)
-    _run(p, f"{len(preferred)}건", size=10.5, color=NAVY, bold=True)
-    _run(p, "  (" + " / ".join(f"{k} {v}건" for k, v in dist.most_common()) + ")", size=10)
-    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
-    _run(p, "· 아래는 채용시장 수요(워크넷 실시간 구인) 상위 사례", size=10, color=GRAY)
 
-    def _jobs(r):
-        s = re.sub(r"\D", "", str(r.get("워크넷 실시간 구인건수", "")))
-        return int(s) if s else -1
-    for i, r in enumerate(sorted(preferred, key=_jobs, reverse=True)[:5], 1):
+    if pref_foreword:
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.2)
+        _shade_paragraph(p, "F2F6FB")
+        _run(p, pref_foreword, size=10.5, color=DARKGRAY)
+        doc.add_paragraph()
+
+    p = doc.add_paragraph(); _run(p, "■ 이달의 우대 분포", size=12, color=BLUE, bold=True)
+    dist = Counter(str(r.get("우대분류", "")).strip() or "기타" for r in preferred)
+    rep = {}
+    for r in preferred:
+        rep.setdefault(str(r.get("우대분류", "")).strip() or "기타", r.get("법령명", ""))
+    tbl = doc.add_table(rows=1 + len(dist), cols=3)
+    tbl.alignment = 1
+    for j, h in enumerate(("우대분류", "건수", "대표 법령")):
+        cell = tbl.rows[0].cells[j]
+        _set_cell_bg(cell, "1F3864")
+        _run(cell.paragraphs[0], h, size=10, color=RGBColor(0xFF, 0xFF, 0xFF), bold=True)
+    for i, (k, v) in enumerate(dist.most_common(), 1):
+        row = tbl.rows[i].cells
+        _run(row[0].paragraphs[0], k, size=10, bold=True)
+        _run(row[1].paragraphs[0], f"{v}건", size=10, color=NAVY, bold=True)
+        _run(row[2].paragraphs[0], str(rep.get(k, ""))[:34], size=9.5)
+    doc.add_paragraph()
+
+    p = doc.add_paragraph(); _run(p, "■ 정책 관점 — 경력이음 정합성 (Track 1)", size=12, color=BLUE, bold=True)
+    risk = Counter(_code(r.get("Track1_위험도", "")) or "-" for r in preferred)
+    name = {"C": "임계", "H": "고위험", "M": "중위험", "L": "저위험", "N": "무관"}
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+    _run(p, "· 위험도 분포 : ", size=10.5)
+    _run(p, " · ".join(f"{name[k]} {risk.get(k, 0)}건" for k in ("C", "H", "M", "L", "N") if risk.get(k, 0)) or "-",
+         size=10.5, color=NAVY, bold=True)
+    risky = [r for r in preferred if _code(r.get("Track1_위험도", "")) in ("C", "H")]
+    if risky:
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+        _run(p, "⚠ 정합성 검토 필요(임계·고위험) : ", size=10, color=RGBColor(0xB0, 0x30, 0x30), bold=True)
+        _run(p, ", ".join(str(r.get("법령명", ""))[:24] for r in risky[:4])
+             + (f" 외 {len(risky) - 4}건" if len(risky) > 4 else ""), size=10)
+
+    p = doc.add_paragraph(); _run(p, "■ 구직자 관점 — 노동시장 효용 (Track 2)", size=12, color=BLUE, bold=True)
+    grp = Counter()
+    for r in preferred:
+        c = _code(r.get("Track2_효용코드", ""))
+        if c.startswith("Ⅰ"): grp["직업창출(Ⅰ)"] += 1
+        elif c.startswith("Ⅱ"): grp["취업관문(Ⅱ)"] += 1
+        elif c.startswith("Ⅲ"): grp["부가우대(Ⅲ)"] += 1
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+    _run(p, "· 효용 유형 : ", size=10.5)
+    _run(p, " · ".join(f"{k} {v}건" for k, v in grp.most_common()) or "-", size=10.5, color=NAVY, bold=True)
+    cert_cnt = Counter()
+    for r in preferred:
+        for c in str(r.get("관련 종목", "")).split(","):
+            c = c.strip()
+            if c and c != "없음":
+                cert_cnt[c] += 1
+    if cert_cnt:
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+        _run(p, "· 우대 조항 다빈도 자격 : ", size=10.5)
+        _run(p, ", ".join(f"{k}({v})" for k, v in cert_cnt.most_common(5)), size=10.5, color=NAVY, bold=True)
+
+    sap = [r for r in preferred if str(r.get("중처법대상", "")).strip() == "대상"]
+    if sap:
+        p = doc.add_paragraph(); _run(p, "■ 중대재해처벌법 연계", size=12, color=BLUE, bold=True)
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
+        _run(p, f"· 안전관리 의무와 직결된 우대 {len(sap)}건 : ", size=10.5)
+        _run(p, ", ".join(str(r.get("법령명", ""))[:24] for r in sap[:3])
+             + (f" 외 {len(sap) - 3}건" if len(sap) > 3 else ""), size=10.5, color=NAVY, bold=True)
+
+    doc.add_paragraph()
+    p = doc.add_paragraph(); _run(p, "■ 주요 사례", size=12, color=BLUE, bold=True)
+    _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
+    top = sorted(preferred, key=lambda x: (_PORD.get(str(x.get("우대분류", "")).strip(), 9),
+                                           str(x.get("법령명", ""))))[:5]
+    for i, r in enumerate(top, 1):
         doc.add_paragraph()
         p = doc.add_paragraph(); _add_left_border(p, NAVY)
         _run(p, f"  {i}. {r.get('법령명', '')}", size=11.5, color=NAVY, bold=True)
+        if str(r.get("중처법대상", "")).strip() == "대상":
+            _run(p, "   ⚠ 중처법 연계", size=9.5, color=RGBColor(0xB0, 0x30, 0x30), bold=True)
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
         _run(p, f"[{str(r.get('우대분류', '')).strip() or '기타'}] ", size=10, color=BLUE, bold=True)
         _run(p, _summarize_certs(r.get("관련 종목", "")), size=10)
-        jobs = _jobs(r)
-        if jobs >= 0:
-            _run(p, "   ·  현재 채용공고 ", size=10, color=GRAY)
-            _run(p, f"{jobs:,}건", size=10, color=NAVY, bold=True)
+        p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
+        _run(p, f"취급 {r.get('Track1_취급유형', '')} · 위험 {r.get('Track1_위험도', '')} · 효용 {r.get('Track2_효용코드', '')}",
+             size=9, color=GRAY)
         summ = str(r.get("조문 요약", "")).strip()
         if summ:
             p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
-            _run(p, summ[:220], size=9.5, color=DARKGRAY)
+            _run(p, summ[:200], size=9.5, color=DARKGRAY)
+        det = str(r.get("상세 분석 결과", "")).strip()
+        if det:
+            p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.6)
+            _run(p, "→ " + det[:150], size=9, color=GRAY, italic=True)
 
 
 def _build_summary_table(doc, issues):
@@ -846,21 +940,21 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path, preferr
 
     # 시트3: 우대사항분석 — 우대여부=O (RADAR 혈통 관점)
     ws3 = wb.create_sheet("우대사항분석")
-    ws3.merge_cells("A1:K1")
+    ws3.merge_cells("A1:J1")
     ws3["A1"] = f"2. 자격 우대사항 분석 : 우대 신설·변경 {len(preferred)}건"
     ws3["A1"].font = XLFont(name=FONT, bold=True, size=12, color=XLNAVY)
     ws3.row_dimensions[1].height = 24
     p_head = ["연번", "법령명", "시행일자", "우대분류", "관련 종목", "취급유형", "위험도",
-              "효용코드", "중처법", "조문 요약", "워크넷 구인"]
-    p_w = [6, 30, 12, 12, 34, 9, 8, 10, 9, 46, 11]
+              "효용코드", "중처법", "조문 요약"]
+    p_w = [6, 30, 12, 12, 32, 18, 14, 18, 9, 48]
     for c, (t, w) in enumerate(zip(p_head, p_w), 1):
         hdr(ws3.cell(row=2, column=c, value=t), fill=XLBLUE)
         ws3.column_dimensions[get_column_letter(c)].width = w
 
-    def _jobs_n(r):
-        s = re.sub(r"\D", "", str(r.get("워크넷 실시간 구인건수", "")))
-        return int(s) if s else -1
-    for i, r in enumerate(sorted(preferred, key=_jobs_n, reverse=True), 1):
+    _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
+    for i, r in enumerate(sorted(preferred,
+                                 key=lambda x: (_PORD.get(str(x.get("우대분류", "")).strip(), 9),
+                                                str(x.get("법령명", "")))), 1):
         row = 2 + i
         d = norm_date(r.get("시행일자", ""))
         df = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if len(d) == 8 else d
@@ -877,9 +971,6 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path, preferr
         body(ws3.cell(row=row, column=8, value=r.get("Track2_효용코드", "")), align=center)
         body(ws3.cell(row=row, column=9, value=r.get("중처법대상", "")), align=center)
         body(ws3.cell(row=row, column=10, value=str(r.get("조문 요약", ""))[:250]), align=left)
-        jc = ws3.cell(row=row, column=11, value=(_jobs_n(r) if _jobs_n(r) >= 0 else ""))
-        jc.font = XLFont(name=FONT, size=9, bold=True, color=XLNAVY)
-        jc.alignment = center; jc.border = border
         ws3.row_dimensions[row].height = 44
     ws3.freeze_panes = "A3"
 
@@ -945,6 +1036,7 @@ def main():
     selected = select_top_laws(big_laws, TOP_N)
     foreword = make_foreword(selected, TARGET_MONTH)
     issues = make_details(selected)
+    pref_foreword = make_pref_foreword(preferred, TARGET_MONTH)
 
     # 3) 차트 + 두 산출물
     chart_path = "/tmp/chart.png"
@@ -956,7 +1048,7 @@ def main():
     xlsx_path = f"/tmp/모니터링결과_{TARGET_MONTH}.xlsx"
     build_briefing_docx(TARGET_MONTH, total_laws, related_count, big_increase,
                         foreword, issues, chart_path, docx_path,
-                        field_chart_path=field_chart_path, preferred=preferred)
+                        field_chart_path=field_chart_path, preferred=preferred, pref_foreword=pref_foreword)
     build_monitor_xlsx(TARGET_MONTH, total_laws, high, simple, xlsx_path, preferred=preferred)
 
     # GitHub Actions가 가져갈 수 있게 현재 폴더에도 복사

@@ -11,14 +11,27 @@ from openpyxl.styles import Alignment, PatternFill, Font, Border, Side
 from config import COLUMNS, SUMMARY_COLUMNS, MAIN_SHEET_NAME, SYSTEM_NAME, WEBHOOK_URL, GCP_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_URL, TARGET_DATE
 
 # 🌟 Track 코드 → 한글 병기 (구글 시트 표기용. SQLite엔 순수 코드 유지)
+from hrdk_law_core.certs import label_track1_type, label_track1_risk, label_track2_code
 from hrdk_law_core.certs import _normalize_cert
 import re
 
+# 시트에 병기로 표기할 Track 칸 — ★시트는 사람이 읽는 원장이므로 라벨 필수★
+#   (brain은 맨 코드를 내고, 여기서 'B (영업요건형)'로 입혀 기록.
+#    core 라벨 함수는 이미 라벨된 값을 그대로 통과시켜 이중 부착 위험 없음)
+_TRACK_LABELERS = {
+    "Track1_취급유형": label_track1_type,
+    "Track1_위험도": label_track1_risk,
+    "Track2_효용코드": label_track2_code,
+}
+
 def _row_for_sheet(info, columns):
-    """COLUMNS 순서대로 행 구성. ★Q-RADAR: Track 칸은 맨 코드(B, Ⅱ-4 …)로 기록 —
-    이관 대장과 표기 통일 (라벨 병기 'B (영업요건형)'는 구 RADAR 방식, 혼혈 방지 위해 폐지).
-    사람용 해설은 월간 브리핑 카드와 Phase 2 MCP가 코드→설명 변환으로 제공한다."""
-    return [info.get(c, "") for c in columns]
+    """COLUMNS 순서대로 행 구성 + Track 칸 한글 라벨 병기 (info 원본 불변)."""
+    row = []
+    for c in columns:
+        val = info.get(c, "")
+        labeler = _TRACK_LABELERS.get(c)
+        row.append(labeler(val) if labeler else val)
+    return row
 
 # 🌟 [신설 헬퍼] 숫자를 엑셀 열 문자(1->A, 17->Q)로 변환해주는 함수
 def get_column_letter(n):
