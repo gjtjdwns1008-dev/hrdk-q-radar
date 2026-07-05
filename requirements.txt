@@ -1,16 +1,11 @@
-# HRDK LAW-RADAR 의존성
-# pip는 URL 안의 ${GITHUB_TOKEN}을 직접 확장하지 않습니다.
-# 인증은 워크플로우(main.yml)의 git config 명령이 처리합니다.
-# 이 파일에는 토큰 없이 순수 URL만 적으면 됩니다.
+# HRDK Q-RADAR 의존성 (모노레포판 · 2026-07-05)
+# 공유 코어(hrdk_law_core)는 이 파일이 아니라 각 워크플로우의
+#   pip install ./core
+# 한 줄로, 같은 레포의 core/ 폴더에서 설치합니다. (외부 레포 의존 없음)
 
-# ── 외부 패키지 ──────────────────────────────────────────────
 requests>=2.31.0
 urllib3>=2.0.0
 google-genai
 openpyxl>=3.1.2
 gspread>=5.12.0,<7
 oauth2client>=4.1.3
-
-# ── HRDK 공유 코어 ────────────────────────────────────────────
-# 토큰은 main.yml의 git config 명령으로 주입됩니다. (토큰을 URL에 직접 쓰지 않아도 됩니다)
-hrdk-law-core @ git+https://github.com/gjtjdwns1008-dev/hrdk-law-core.git
