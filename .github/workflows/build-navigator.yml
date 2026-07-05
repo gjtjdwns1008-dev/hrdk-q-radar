@@ -37,6 +37,10 @@ jobs:
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
+      - name: Pages 프로비저닝 확인/강제 (신규 레포 첫 배포 대비)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: 파이썬 설치
         uses: actions/setup-python@v5
         with:
