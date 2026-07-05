@@ -339,8 +339,18 @@ def main():
         return
 
     # ── 1. 오늘이 '되는 날'인지 확인 (자동 실행) ──────────
-    if not check_law_reachable(LAW_API_KEY):
-        print("❌ 법제처 연결 불가 (오늘은 IP 차단일). 재시도 없이 종료합니다.")
+    # ★새도우 관측 반영(2026-07-05): 단발 프로브 통과율 실측 ~3.7% → 20초 간격 3회 재시도로 보강.
+    import time as _probe_time
+    _reachable = False
+    for _probe_i in range(3):
+        if check_law_reachable(LAW_API_KEY):
+            _reachable = True
+            break
+        if _probe_i < 2:
+            print(f"  ⏳ 법제처 프로브 실패 ({_probe_i + 1}/3) — 20초 후 재시도")
+            _probe_time.sleep(20)
+    if not _reachable:
+        print("❌ 법제처 연결 불가 (3회 프로브 전부 차단). 재시도 없이 종료합니다.")
         print("   → 밀린 날짜는 연결되는 다음 날 자동으로 따라잡습니다.")
         from datetime import datetime, timezone, timedelta
         # 처리하려던 시행일자(=어제). 자동 실행은 '실행일 −1'.
@@ -352,7 +362,10 @@ def main():
             from hrdk_law_core.sheets import read_last_success_date
             last_ok = read_last_success_date(GCP_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_URL)
             if last_ok and last_ok >= target_efyd:
-                print(f"ℹ️ {target_efyd}는 이미 처리 완료(마지막 성공일 {last_ok}).")
+                # ★새도우 종료 방침(2026-07-05): 당일 목표가 이미 🟢이면 차단 계측 🔴를 남기지
+                #   않고 조용히 종료. (차단율 실측치는 성공 시 "(N회 차단 후 통과)"로 압축 보존)
+                print(f"ℹ️ {target_efyd}는 이미 처리 완료(마지막 성공일 {last_ok}). 기록 없이 종료.")
+                sys.exit(0)
         except Exception as e:
             print(f"ℹ️ 마지막 성공일 확인 불가({str(e)[:40]}).")
         log_run_status("🔴", "법제처 연결 불가(자동)", target_date=target_efyd)

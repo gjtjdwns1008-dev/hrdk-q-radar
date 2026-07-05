@@ -93,7 +93,14 @@ def _upsert_summary_row(spreadsheet, target_date_display, counts, symbol, log):
         ws.append_row(new_row)
     else:
         old_status = all_values[row_num - 1][st_i] if st_i < len(all_values[row_num - 1]) else ""
-        new_status = f"{old_status} → {this_attempt}" if old_status.strip() else this_attempt
+        if "🟢" in str(symbol):
+            # ★새도우 종료 방침(2026-07-05): 성공 시 🔴 체인을 "(N회 차단 후 통과)"로 압축.
+            #   구시스템과 동일한 한 줄 표기 + 차단율 계측값(N)은 숫자로 영구 보존.
+            _blocked_n = old_status.count("🔴")
+            _note = f" ({_blocked_n}회 차단 후 통과)" if _blocked_n else ""
+            new_status = f"{this_attempt}{_note}"
+        else:
+            new_status = f"{old_status} → {this_attempt}" if old_status.strip() else this_attempt
         updates = [{"range": f"{col(st_i)}{row_num}", "values": [[new_status]]},
                    {"range": f"{col(lg_i)}{row_num}", "values": [[log]]}]
         if counts is not None:
