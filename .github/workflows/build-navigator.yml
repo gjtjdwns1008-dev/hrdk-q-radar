@@ -1,0 +1,66 @@
+# .github/workflows/build-navigator.yml
+# ───────────────────────────────────────────────────────────────
+# 하는 일: Q-RADAR 통합 대장(구글시트) → navigator/build_site.py
+#          → dist/index.html → GitHub Pages 배포 (대국민 공개 화면).
+#
+# 사전 1회 설정 (깃허브 웹): Settings → Pages → Source = "GitHub Actions"
+# 시크릿: daily.yml과 동일한 것 재사용 — 신규 등록 0개.
+#
+# 실행: 하루 3회 — Q-RADAR 크론이 그날 언제 성공하든 당일 반영되도록.
+# ───────────────────────────────────────────────────────────────
+name: Build & Deploy navigator (Q-RADAR)
+
+on:
+  schedule:
+    - cron: "30 23 * * *"   # KST 08:30
+    - cron: "0 5 * * *"     # KST 14:00
+    - cron: "0 11 * * *"    # KST 20:00
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "navigator/**"
+      - ".github/workflows/build-navigator.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 의존성 설치 (네비게이터는 core 미의존 — 경량)
+        run: pip install "gspread>=5.12,<7" oauth2client
+      - name: 사이트 생성 (통합 대장 → dist/index.html)
+        env:
+          QRADAR_SA_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          QRADAR_SHEET_ID: ${{ secrets.GOOGLE_SHEET_URL }}
+          # R_SCOPE: "all"  # 화면2를 v1처럼 '관련 법령 전체'로 넓히려면 주석 해제
+        run: python navigator/build_site.py
+      - name: 결과물(dist) 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: GitHub Pages 배포
+        id: deployment
+        uses: actions/deploy-pages@v4

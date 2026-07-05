@@ -68,8 +68,8 @@ jobs:
           pip install -r requirements.txt
           # 이슈브리핑 전용 추가 패키지
           pip install python-docx openpyxl matplotlib
-          # 공유 코어 라이브러리 (시트 인증·LLM 클라이언트 재사용)
-          pip install git+https://github.com/gjtjdwns1008-dev/hrdk-law-core.git
+          # 공유 코어 라이브러리 — 모노레포 core/ 폴더에서 직접 설치 (2026-07-05)
+          pip install ./core
 
       # 6) 이슈브리핑 생성 실행
       - name: Q-RADAR Monthly Briefing

@@ -85,12 +85,12 @@ jobs:
           python-version: '3.11'
 
       - name: 📦 필수 라이브러리 설치
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Actions 내장 토큰 — 별도 등록 불필요
         run: |
           python -m pip install --upgrade pip
-          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
           pip install -r requirements.txt
+          # ★모노레포(2026-07-05): 공유 코어를 이 레포의 core/ 폴더에서 직접 설치
+          #   (외부 레포 원격 설치·토큰 트릭 폐지 → 크로스 레포 실패 지점 제거)
+          pip install ./core
 
       - name: Q-RADAR 실행
         env:
