@@ -24,7 +24,6 @@ from hrdk_law_core.scraper  import get_base_laws
 from hrdk_law_core.certs    import get_qnet_certs_text, get_relevant_certs_text, detect_name_change_signal, normalize_cert_string
 from hrdk_law_core.worknet  import get_worknet_job_count
 from knowledge import QRadarKB  # ★Q-RADAR: core KB + 통합 확장
-from hrdk_law_core.hybrid   import verify_with_krivet
 from hrdk_law_core.backfill import check_law_reachable, pending_dates, mark_done, is_valid_target_date
 
 from brain import run_ai_analysis
@@ -33,7 +32,6 @@ from report_maker   import (
     log_run_status, fetch_main_ledger_values,
     export_held_laws_to_sheet, ensure_update_sheet_exists, read_update_instructions,
     mark_update_applied, apply_name_updates_to_ledger, read_all_aliases_for_resolve,
-    init_ledger_baseline, apply_cert_rename_to_ledger,
 )
 
 
@@ -190,16 +188,13 @@ def process_one_day(target_date: str, kb, qnet_certs_text: str, run_note: str = 
                     print(f"    📞 워크넷 수요 조회 중... ({law_info.get('관련 종목')})")
                     job_demand = get_worknet_job_count(law_info.get("관련 종목", ""), api_key=WORKNET_API_KEY)
                     law_info["워크넷 실시간 구인건수"] = job_demand
-                    law_info = verify_with_krivet(law_info, kb)
+                    # ★직능연 결별(2026-07-06): 하이브리드 검증 은퇴 — 1,719행 실측 개입 0건.
+                    #   기준선은 자체 축적 통합 대장으로 세대교체 (Phase 2 MCP 지식베이스).
                 else:
                     job_demand = ""
                     law_info["워크넷 실시간 구인건수"] = ""
-                hybrid_tag = {
-                    "기준조항_확정": "📌 기준조항", "기준조항_보정": "📌 기준조항(보정)",
-                    "직능연_검증": "✅ 직능연", "AI_스마트_보정": "💡 AI보정", "AI_신규판단": "🆕 신규",
-                }.get(law_info.get("hybrid_status", ""), "")
                 target_laws.append(law_info)
-                print(f"    ✅ 관련 법령 ({elapsed:.1f}초) [구인:{job_demand}] [{hybrid_tag}]")
+                print(f"    ✅ 관련 법령 ({elapsed:.1f}초) [구인:{job_demand}]")
             else:
                 law_info["워크넷 실시간 구인건수"] = "-"
                 print(f"    ❌ 해당없음 ({elapsed:.1f}초)")
@@ -227,12 +222,11 @@ def process_one_day(target_date: str, kb, qnet_certs_text: str, run_note: str = 
                     if str(law_info.get("우대여부", "")).strip() == "O":
                         job_demand = get_worknet_job_count(law_info.get("관련 종목", ""), api_key=WORKNET_API_KEY)
                         law_info["워크넷 실시간 구인건수"] = job_demand
-                        law_info = verify_with_krivet(law_info, kb)
                     else:
                         job_demand = ""
                         law_info["워크넷 실시간 구인건수"] = ""
                     target_laws.append(law_info)
-                    print(f"✅ (구인:{job_demand}) [{law_info.get('hybrid_status','')}]")
+                    print(f"✅ (구인:{job_demand})")
                 else:
                     law_info["워크넷 실시간 구인건수"] = "-"
                     print("❌ (해당없음)")
@@ -250,12 +244,7 @@ def process_one_day(target_date: str, kb, qnet_certs_text: str, run_note: str = 
     print("\n📝 구글 시트 적재...")
     ai_fail_count = sum(1 for r in all_results if "AI 분석 최종 실패" in str(r.get("상세 분석결과", "")))
     status_text = "🟡 부분 지연/실패" if ai_fail_count > 0 else "🟢 정상 작동"
-    log_text = (
-        f"{run_note}총 {len(laws)}건 중 {len(target_laws)}건 매칭. AI실패 {ai_fail_count}건. "
-        f"기준조항={sum(1 for r in target_laws if r.get('hybrid_status','').startswith('기준조항'))}건, "
-        f"직능연={sum(1 for r in target_laws if r.get('hybrid_status')=='직능연_검증')}건, "
-        f"신규={sum(1 for r in target_laws if r.get('hybrid_status')=='AI_신규판단')}건"
-    )
+    log_text = f"{run_note}총 {len(laws)}건 중 {len(target_laws)}건 매칭. AI실패 {ai_fail_count}건."
     upload_to_google_sheet(len(laws), target_laws, target_date=target_date, status=status_text, log=log_text)
 
     # SQLite 저장 (upload가 각 law_info에 MST_ID를 부여한 뒤라 안전)
@@ -306,13 +295,6 @@ def main():
         run_name_updates(kb)
     except Exception as e:
         print(f"  ⚠️ 자격명칭최신화 처리 실패: {e}")
-
-    # ── [1회 초기화] 우대사항 대장 기준선 ─────────────────
-    try:
-        from hrdk_law_core.certs import resolve_current_name as _resolve
-        init_ledger_baseline(kb, resolve_fn=_resolve)
-    except Exception as e:
-        print(f"  ⚠️ 우대사항 대장 기준선 처리 실패: {e}")
 
     # ── [수동 실행 모드] 특정 일자만 처리 (연결 확인보다 먼저 — 대상 날짜를 알아야 함) ──
     manual_date = os.environ.get("MANUAL_DATE", "").strip()
@@ -481,12 +463,6 @@ def analyze_only():
         run_name_updates(kb)
     except Exception as e:
         print(f"  ⚠️ 자격명칭최신화 처리 실패: {e}")
-    try:
-        from hrdk_law_core.certs import resolve_current_name as _resolve
-        init_ledger_baseline(kb, resolve_fn=_resolve)
-    except Exception as e:
-        print(f"  ⚠️ 우대사항 대장 기준선 처리 실패: {e}")
-
     # 분석할 날짜 = 백필 대상 중 '스크랩이 저장된' 날짜만
     dates = pending_dates(kb)
     if not dates:
