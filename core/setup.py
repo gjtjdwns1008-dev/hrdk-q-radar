@@ -12,6 +12,7 @@ setup(
     include_package_data=True,
     python_requires=">=3.11",
     install_requires=[
+        "pyhwp",
         "requests>=2.31.0",
         "urllib3>=2.0.0",
         "gspread>=5.12.0,<7",
