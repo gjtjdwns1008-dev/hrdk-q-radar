@@ -224,11 +224,22 @@ def get_base_laws(api_key: str, target_date: str) -> list | None:
                         full_text += f"### 🚨 전체 조문\n{body}"
                     if stars:
                         full_text += f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}"
+                    # ★재발방지(2026-07-06): 파일 전용 별표 심층 수집 + 상태 사실 표기
+                    try:
+                        from .annex import build_annex_sections
+                        _ax_get = lambda u: requests.get(u, timeout=30, headers={"User-Agent": "Mozilla/5.0"}).content
+                        ax_text, ax_status = build_annex_sections(detail_root, _ax_get)
+                        if ax_text:
+                            full_text += f"\n\n{ax_text}"
+                        if ax_status:
+                            full_text += f"\n\n{ax_status}"
+                    except Exception as _ax_e:
+                        print(f"    ⚠️ 별표 심층수집 건너뜀: {str(_ax_e)[:40]}")
 
                     all_laws_dict[law_name] = {
                         "법령명": law_name, "시행일자": enforce_date,
                         "소관부처": ministry, "공포번호": prom_num,
-                        "공포일자": prom_date, "원본": full_text[:15000],
+                        "공포일자": prom_date, "원본": full_text[:int(os.environ.get("ORIGINAL_MAX_CHARS", "150000"))],
                         "링크": base_law_link, "스킵여부": False,
                     }
                     time.sleep(0.1)
