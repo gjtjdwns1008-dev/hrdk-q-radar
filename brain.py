@@ -80,6 +80,31 @@ def generate_new_law_link(law_name, enforce_date, prom_num, prom_date, article_n
     return f"https://www.law.go.kr/법령/{law_name}"
 
 
+
+
+def _sanitize_review(reason, related_certs, source_text, qnet_certs_text):
+    """★재발방지(2026-07-06): 검토사유 환각 자동검증.
+    사유에 등장한 '별표 번호'나 '자격종목명'이 본 법령 원문·관련종목에 없으면
+    오염(타 법령 사례 인용)으로 보고 사실 기반 문구로 교체한다."""
+    r = (reason or "").strip()
+    if not r:
+        return r
+    nsp = lambda x: re.sub(r"[\s\u318D\u00B7]+", "", str(x or ""))
+    src, rel = nsp(source_text), nsp(related_certs)
+    # ① 별표 번호 검증
+    for m in set(re.findall(r"별표\s*\d+(?:의\s*\d+)?", r)):
+        if nsp(m) not in src:
+            print(f"    ⚠️ 검토사유 자동검증: 원문에 없는 '{m}' 인용 감지 → 사유 교체")
+            return "자동검증에서 본 법령 원문에 없는 별표·사례 인용이 감지되어 사유를 무효화함. 원문 및 별표 파일 직접 확인 필요."
+    # ② 종목명 검증 (사전에 있는 종목이 사유엔 있는데 원문·관련종목엔 없음)
+    reason_n = nsp(r)
+    for name in re.findall(r"[가-힣()]{4,}", qnet_certs_text or ""):
+        n = nsp(name)
+        if len(n) >= 4 and n in reason_n and n not in rel and n not in src:
+            print(f"    ⚠️ 검토사유 자동검증: 원문 외 종목 '{name}' 언급 감지 → 사유 교체")
+            return "자동검증에서 본 법령 원문에 없는 자격종목 언급이 감지되어 사유를 무효화함. 원문 및 별표 파일 직접 확인 필요."
+    return r
+
 def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     # 🌟 [Q-RADAR 통합 프롬프트] — monitor(연관도·활용도) × RADAR(우대·투트랙) 병합
     prompt = f"""
@@ -184,9 +209,14 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     ### 🧪 [공통 판정 항목]
     - AI_신뢰도: '높음'(종목 명칭이 조문·별표에 텍스트로 명시) / '보통'(직무 내용상 강한 추론) /
       '낮음'(논리적 비약 필요)
-    - 검토필요: ① AI_신뢰도가 보통/낮음이거나 ② 활용도_구분이 '대폭 증가/대폭 감소'이거나
-      ③ 중처법·Track 판단이 애매하면 "O", 아니면 "X"
+    - 검토필요: ① AI_신뢰도가 '낮음'이거나 ② 활용도_구분이 '대폭 증가/대폭 감소'이거나
+      ③ 중처법·Track 판단이 애매하거나 ④ 별표가 '파일 전용(내용 미확보)'로 표시되어
+      자격 기준 확인이 불가한 경우에만 "O", 그 외 "X".
+      ※ 신뢰도가 '보통'이라는 이유만으로 O를 달지 말 것 (검토필요 남발 금지).
     - 검토사유: 검토필요가 "O"일 때만 구체적으로, "X"면 빈칸("")
+    - 검토사유 작성 규칙: 본 법령 원문에 실제 등장한 조문 번호·별표 번호·자격종목명만
+      언급할 것. 다른 법령의 사례, 기억 속 일반 사례(예: 타 법령의 별표 기준) 인용 절대
+      금지. 별표가 '파일 전용(미확보)' 상태면 그 사실을 그대로 기재.
 
     ### 🚨 [치명적 에러 방지 규칙 — 반드시 지킬 것]
     1. **JSON 형태 유지**: Key는 반드시 큰따옴표(")를 사용해야 합니다.
@@ -331,7 +361,8 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
             "근거조문": names_str,
             "AI신뢰도": data.get("AI_신뢰도", ""),
             "검토필요": data.get("검토필요", "X"),
-            "검토사유": data.get("검토사유", ""),
+            "검토사유": _sanitize_review(data.get("검토사유", ""), data.get("관련_종목", ""),
+                                        law.get("원본", ""), qnet_certs_text),
             "조문별 다이렉트 링크": links_str,
         }
 
