@@ -463,7 +463,7 @@ border:1.5px solid #F2DFAE;border-radius:16px;padding:14px 18px;margin-bottom:16
 .cg-code.dim,.cg-area.dim{background:#F2F3F5;color:var(--mut)}
 .cg-area{font-weight:800;color:var(--c,var(--navy));font-size:12.5px}
 .cg-area small{font-weight:500;color:var(--mut)}
-.cg-row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.cg-row2{display:grid;grid-template-columns:1.35fr 1fr;gap:18px}
 .cg-note{margin-top:15px;font-size:12px;color:var(--mut);line-height:1.9;border-top:1.5px solid var(--line);padding-top:12px}
 
 /* 모달 */
