@@ -335,7 +335,7 @@ PAGE = r"""<!DOCTYPE html>
 /* ═══ B안 「법령 노선도」 — 교통 사인 시스템: 노선색·역명판·정거장 ═══ */
 :root{--bg:#FAFBFD;--ink:#101828;--navy:#1F3864;--mut:#5D6B7E;--line:#E4E8EF;
 --l1:#C0492F;--l2:#1F6FB2;--l3:#0F6E56;--l4:#5B4BB0;--l5:#8A8F98;--go:#00A86B;
---sans:'Pretendard',-apple-system,sans-serif;--accent:#1F6FB2}
+--sans:'Pretendard',-apple-system,sans-serif;--accent:#1F6FB2;--hrdk:#005EB8}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.65}
 .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
@@ -359,9 +359,12 @@ background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15
 .seal-stamp::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--go);animation:blink 1.8s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.seal-stamp::before{animation:none}}
-.tabs{display:flex;gap:8px;padding-bottom:14px}
-.tab{appearance:none;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:10px 18px;font-size:13.5px;font-weight:700;color:var(--mut)}
-.tab.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.tabs{display:flex;gap:10px;padding-bottom:16px}
+.tab{appearance:none;border:2px solid var(--line);background:#fff;border-radius:999px;padding:13px 26px;font-size:15.5px;font-weight:800;color:var(--mut);display:inline-flex;align-items:center;gap:9px;cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
+.tab::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--line);flex:none;transition:background .15s,box-shadow .15s}
+.tab:hover{border-color:var(--navy);color:var(--navy)}
+.tab.active{background:var(--navy);border-color:var(--navy);color:#fff;box-shadow:0 8px 20px rgba(27,42,74,.30)}
+.tab.active::before{background:var(--l1);box-shadow:0 0 0 3px rgba(255,255,255,.35)}
 .tab:focus-visible{outline:2.5px solid var(--l2);outline-offset:2px}
 
 /* hero: 정거장 안내판 */
@@ -375,17 +378,21 @@ background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15
 background:linear-gradient(90deg,var(--l2),var(--l3));position:relative}
 
 /* toolbar */
-.toolbar{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+.toolbar{background:var(--hrdk);border-bottom:none;position:sticky;top:0;z-index:10;box-shadow:0 2px 12px rgba(6,45,96,.22)}
 .toolbar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:12px 22px}
 .trow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.trow>span{font-size:13px;font-weight:700;color:var(--mut)}
-select{appearance:none;border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:9px 32px 9px 13px;font-size:13.5px;font-family:inherit;font-weight:600;color:var(--ink);
-background-image:url("data:image/svg+xml,%3Csvg width='9' height='6' viewBox='0 0 9 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%235D6B7E' fill='none' stroke-width='1.8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
-select:focus{outline:none;border-color:var(--navy)}
-.search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 16px;min-width:min(430px,72vw);color:var(--mut)}
-.search:focus-within{border-color:var(--navy);box-shadow:0 0 0 3px #E8EEF9}
-.search input{border:none;outline:none;background:none;font-size:14px;font-family:inherit;flex:1;color:var(--ink)}
-.count{font-size:13px;color:var(--mut);font-weight:600}.count b{color:var(--navy);font-variant-numeric:tabular-nums}
+.trow>span{font-size:13.5px;font-weight:700;color:#fff}
+select{appearance:none;border:1.5px solid rgba(255,255,255,.55);background:rgba(255,255,255,.13);border-radius:12px;padding:9px 32px 9px 13px;font-size:13.5px;font-family:inherit;font-weight:600;color:#fff;
+background-image:url("data:image/svg+xml,%3Csvg width='9' height='6' viewBox='0 0 9 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%23FFFFFF' fill='none' stroke-width='1.8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+select:focus{outline:none;border-color:#fff;background-color:rgba(255,255,255,.22)}
+select option{color:var(--ink);background:#fff}
+.search{display:flex;align-items:center;gap:10px;border:2px solid rgba(255,255,255,.85);background:rgba(255,255,255,.15);border-radius:999px;padding:12px 19px;min-width:min(520px,78vw);color:#fff;transition:border-color .15s,background .15s,box-shadow .15s}
+.search:focus-within{border-color:#fff;background:rgba(255,255,255,.26);box-shadow:0 0 0 4px rgba(255,255,255,.24)}
+.search svg{flex:none}
+.search input{border:none;outline:none;background:none;font-size:15.5px;font-family:inherit;flex:1;color:#fff}
+.search input::placeholder{color:rgba(255,255,255,.80);font-weight:500}
+.search input::-webkit-search-cancel-button{filter:invert(1)}
+.count{font-size:13px;color:#fff;font-weight:600}.cnt-note{font-size:11.5px;color:rgba(255,255,255,.75);font-weight:600}.count b{color:#fff;font-weight:800;font-variant-numeric:tabular-nums}
 
 /* 화면1: 노선 카드 — 좌측 노선 라인 + 정거장 도트 */
 main .wrap{padding:26px 22px 60px}
@@ -442,13 +449,14 @@ border:1.5px solid #F2DFAE;border-radius:16px;padding:14px 18px;margin-bottom:16
 .cg-arrow{margin-left:auto;color:var(--mut);transition:transform .18s}
 .clsguide[open] .cg-arrow{transform:rotate(180deg)}
 .cg-body{padding:2px 18px 18px;border-top:1.5px solid var(--line)}
-.cg-block{margin-top:16px}
-.cg-head{font-weight:800;font-size:13.5px;color:var(--navy);margin-bottom:8px}
+.cg-block{margin-top:16px;border:2.5px solid #C9D3E4;border-radius:14px;background:#FBFCFE;padding:14px 16px 12px}
+.cg-head{font-weight:800;font-size:13.5px;color:var(--navy);margin-bottom:10px;padding-bottom:9px;border-bottom:1.5px solid #E7ECF4}
 .cg-head span{font-weight:500;font-size:12px;color:var(--mut);margin-left:7px}
 .cg-tbl{width:100%;border-collapse:collapse;font-size:13px}
 .cg-tbl th{background:#F4F6FA;text-align:left;padding:8px 11px;font-size:12px;color:var(--mut);font-weight:700}
 .cg-tbl th:first-child{border-radius:9px 0 0 9px}.cg-tbl th:last-child{border-radius:0 9px 9px 0}
 .cg-tbl td{padding:8px 11px;border-bottom:1px solid #EEF1F6;vertical-align:top}
+.cg-tbl tr:last-child td{border-bottom:none}
 .cg-tag{display:inline-block;color:#fff;background:var(--c,#8A8F98);font-weight:700;font-size:12px;padding:3px 11px;border-radius:999px;white-space:nowrap}
 .cg-code{display:inline-block;min-width:36px;text-align:center;background:#EEF3FB;color:var(--navy);font-weight:800;font-size:12px;padding:2.5px 7px;border-radius:8px;font-variant-numeric:tabular-nums}
 .cg-code.warn{background:#FBF3E2;color:#B37D10}.cg-code.danger{background:#FBEDEA;color:var(--l1)}
@@ -463,15 +471,19 @@ border:1.5px solid #F2DFAE;border-radius:16px;padding:14px 18px;margin-bottom:16
 .modal.open{display:block}
 .modal-backdrop{position:absolute;inset:0;background:rgba(16,24,40,.45)}
 .modal-panel{position:absolute;top:4vh;left:50%;transform:translateX(-50%);width:min(760px,94vw);max-height:92vh;overflow-y:auto;
-background:#fff;border-radius:22px;padding:32px 34px 28px}
+background:#fff;border-radius:22px;padding:32px 34px 28px;scrollbar-width:thin;scrollbar-color:#AEBBD0 transparent}
+.modal-panel::-webkit-scrollbar{width:11px}
+.modal-panel::-webkit-scrollbar-track{background:transparent;margin:40px 0}
+.modal-panel::-webkit-scrollbar-thumb{background:#C3CDDD;border-radius:99px;border:3.5px solid #fff}
+.modal-panel::-webkit-scrollbar-thumb:hover{background:var(--navy)}
 .modal-panel::before{content:"";position:sticky;top:-32px;display:block;height:6px;margin:-32px -34px 26px;border-radius:22px 22px 0 0;
 background:linear-gradient(90deg,var(--l1) 0 20%,var(--l2) 20% 40%,var(--l3) 40% 60%,var(--l4) 60% 80%,var(--l5) 80% 100%)}
 .modal-close{position:sticky;top:0;float:right;appearance:none;border:none;background:#F2F5F9;width:36px;height:36px;border-radius:50%;font-size:19px;color:var(--mut);z-index:2}
 .modal-close:hover{background:#E4E8EF;color:var(--ink)}
 .m-title,.m-cert{font-weight:800;font-size:22px;line-height:1.35;letter-spacing:-.015em;padding-right:44px}
 .m-meta{font-size:13px;color:var(--mut);margin-top:7px;padding-bottom:14px;border-bottom:1.5px solid var(--line)}
-.m-sec{margin-top:19px}
-.m-sec h4{font-size:13px;font-weight:800;color:var(--navy);margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.m-sec{margin-top:16px;border:2px solid #D3DCEA;border-radius:14px;background:#FBFCFE;padding:14px 16px}
+.m-sec h4{font-size:13px;font-weight:800;color:var(--navy);margin-bottom:10px;padding-bottom:9px;border-bottom:2px solid #E7ECF4;display:flex;align-items:center;gap:7px}
 .m-sec h4::before{content:"";width:8px;height:8px;border-radius:50%;background:#fff;border:2.5px solid var(--navy)}
 .m-sec p{font-size:14px;color:#3C475A}
 .m-chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -516,7 +528,7 @@ footer b{color:var(--navy)}
 @media (max-width:760px){
   .doc-head{flex-direction:column;align-items:flex-start;gap:12px}
   .tabs{width:100%;overflow-x:auto}
-  .tab{white-space:nowrap;font-size:12px;padding:9px 13px}
+  .tab{white-space:nowrap;font-size:13.5px;padding:11px 17px}
   #grid-m .card{padding-left:40px}
   .cg-row2{grid-template-columns:1fr}
   .modal-panel{padding:24px 18px}.modal-panel::before{margin:-24px -18px 20px}
@@ -635,7 +647,7 @@ footer b{color:var(--navy)}
   <div class="toolbar"><div class="wrap"><div class="trow">
     <div class="search"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <input id="qr" type="search" placeholder="자격증 이름으로 검색 (예: 전기기사)" aria-label="검색"></div>
-    <span class="count">자격증 <b id="cntr">0</b>개</span>
+    <span class="count">자격증 <b id="cntr">0</b>개 <span class="cnt-note">(자격 통폐합·명칭변경 등이 포함된 수치)</span></span>
   </div></div></div>
   <main><div class="wrap">@@NOCERT@@<div class="grid rgrid" id="grid-r">@@R_CARDS@@</div><p class="noresult" id="nores-r">해당 자격증이 없습니다.</p></div></main>
 </section>
