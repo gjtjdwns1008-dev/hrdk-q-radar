@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-annex.py — 별표·서식 심층 수집기 (2026-07-06 재발방지 조치)
+annex.py v2.0 — 별표·서식 심층 수집기 (패턴 수확 방식, 2026-07-06)
 =============================================================================
-배경: 법제처 API의 <별표내용>은 텍스트 변환본이 있는 별표만 채워지고,
-HWP/PDF 파일 전용 별표는 링크만 온다. 자격 기준(선임·배치 인력표)은
-별표에 몰려 있어, 미수집 시 AI가 "별표가 본문에 없다"는 검토사유를 남발했다.
+v1의 한계: 별표 링크가 담긴 XML '태그 이름'을 추정에 의존 → 실전 0건.
+v2 전략: 태그 이름을 믿지 않는다. 상세 XML 전체를 훑어 '값'이 파일 링크
+패턴(flDownload / flSeq= / .hwp)인 요소를 전부 수확한다. 태그가 무엇이든
+법제처 파일서버 주소의 생김새는 같기 때문이다.
+2차 소스: 법령 XML에서 못 찾으면 별표서식 전용 검색 API(target=licbyl)를
+같은 패턴 수확으로 시도한다.
 
-설계 원칙 — 분석 완전성 우선 (2026-07-06 확정):
-  · 파일 수 제한 없음, 별표 본문 절단 없음. 자격 기준이 사는 곳을 자르지 않는다.
-  · Gemini Flash 컨텍스트(100만 토큰) 대비 수십 배 여유 — 절단의 실익이 없음.
-  · 유일한 예외 = 병리적 문서용 '안전밸브'(기본 120,000자, 환경변수
-    ANNEX_TOTAL_CHARS로 확장). 발동 시 자격 우선순위로 채우고,
-    제외분은 제목을 사실 표기 + 로그 경고. 정책이 아니라 서킷브레이커다.
-
-안전핀: 모든 단계 try/except — 어떤 실패도 일일 배치를 멈추지 않고
-        '미확보' 표기로 강등될 뿐이다. (해외 IP 차단·필드명 변화 대비)
+설계 원칙(유지): 무절단 — 파일수·본문 절단 없음. 안전밸브만 env
+(ANNEX_TOTAL_CHARS 기본 120,000 / ANNEX_MAX_FILES 기본 0=무제한).
+안전핀(유지): 모든 실패는 '미확보' 표기로 강등 — 배치를 멈추지 않는다.
 """
 import os
 import re
@@ -25,43 +22,15 @@ import tempfile
 from pathlib import Path
 
 BASE = "https://www.law.go.kr"
-# 안전밸브(서킷브레이커) — 기본값은 실존 별표가 닿지 않는 높이
 TOTAL_CHAR = int(os.environ.get("ANNEX_TOTAL_CHARS", "120000"))
-MAX_FILES = int(os.environ.get("ANNEX_MAX_FILES", "0"))  # 0 = 무제한
+MAX_FILES = int(os.environ.get("ANNEX_MAX_FILES", "0"))
 PRIORITY = re.compile(r"자격|인력|기술|선임|배치|기준|검사|교육|안전관리자")
-
-# 링크 필드명 후보 (법제처 XML 변형 대비 방어적 탐색)
-_LINK_KEYS = ("별표서식파일링크", "별표HWP파일링크", "별표파일링크")
-_TITLE_KEYS = ("별표제목", "별표명")
-_NUM_KEYS = ("별표번호",)
+LINK_PAT = re.compile(r"flDownload|flSeq=|\.hwp(?:\b|$)", re.I)
+TITLE_TAG = re.compile(r"제목|명$")
 
 
-def _child_text(unit, names):
-    for n in names:
-        el = unit.find(n)
-        if el is not None and (el.text or "").strip():
-            return el.text.strip()
-    return ""
-
-
-def _iter_units(detail_root):
-    """별표 단위 노드 수집 — 표준 태그 우선, 변형 태그 방어."""
-    units = detail_root.findall(".//별표단위")
-    if units:
-        return units
-    out = []
-    for el in detail_root.iter():
-        tag = getattr(el, "tag", "")
-        if isinstance(tag, str) and tag.startswith("별표") and tag != "별표내용":
-            if el.find("별표내용") is not None or any(el.find(k) is not None for k in _LINK_KEYS):
-                out.append(el)
-    return out
-
-
+# ── hwp5txt 3단 자가해결 (v1.3.1 유지) ─────────────────────────────────
 def resolve_hwp5txt():
-    """hwp5txt 실행 수단 3단 자가해결 (PATH 미등록 환경 대응, 2026-07-06):
-    ① PATH → ② 현재 파이썬의 Scripts/bin 폴더 → ③ 파이썬 내부 모듈 구동(runpy).
-    반환: ("cmd", [실행리스트]) | ("runpy",) | (None, 사유)"""
     exe = shutil.which("hwp5txt")
     if exe:
         return ("cmd", [exe])
@@ -70,7 +39,7 @@ def resolve_hwp5txt():
     if cand.exists():
         return ("cmd", [str(cand)])
     try:
-        from hwp5.hwp5txt import TextTransform  # noqa: F401 — 패키지만 있으면 API 직결
+        from hwp5.hwp5txt import TextTransform  # noqa: F401
         return ("api",)
     except Exception as e:
         return (None, f"pyhwp 미설치/로딩 실패({str(e)[:40]})")
@@ -81,7 +50,6 @@ def _run_hwp5txt(mode, tmp):
         r = subprocess.run(mode[1] + [tmp], capture_output=True, timeout=120)
         return r.stdout.decode("utf-8", errors="ignore")
     if mode[0] == "api":
-        # pyhwp 파이썬 API 직결 (PATH·콘솔스크립트 완전 무관)
         from contextlib import closing
         from hwp5.hwp5txt import TextTransform
         from hwp5.xmlmodel import Hwp5File
@@ -90,7 +58,7 @@ def _run_hwp5txt(mode, tmp):
         try:
             with closing(Hwp5File(tmp)) as h, open(out, "wb") as d:
                 tt.transform_hwp5_to_text(h, d)
-        except TypeError:  # 일부 판은 텍스트 스트림을 기대
+        except TypeError:
             with closing(Hwp5File(tmp)) as h, open(out, "w", encoding="utf-8") as d:
                 tt.transform_hwp5_to_text(h, d)
         try:
@@ -102,7 +70,6 @@ def _run_hwp5txt(mode, tmp):
 
 
 def extract_hwp_text(data: bytes) -> str:
-    """HWP 바이트 → 텍스트 (pyhwp의 hwp5txt 사용). 실패 시 ""."""
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".hwp", delete=False) as f:
@@ -125,45 +92,106 @@ def extract_hwp_text(data: bytes) -> str:
                 pass
 
 
-def build_annex_sections(detail_root, http_get):
-    """반환: (추출 텍스트 섹션, 상태 표기 섹션) — 둘 다 "" 가능.
-    http_get(url) -> bytes  (scraper의 세션·재시도 재사용을 위해 주입)"""
-    try:
-        units = _iter_units(detail_root)
-    except Exception:
-        units = []
-    if not units:
-        return "", ""
+# ── 패턴 수확 엔진 ───────────────────────────────────────────────────────
+def _title_near(el, parent):
+    """링크 요소 주변에서 제목 후보 찾기: 같은 부모의 '…제목/…명' 태그 우선."""
+    if parent is not None:
+        for c in parent:
+            t = getattr(c, "tag", "")
+            if isinstance(t, str) and TITLE_TAG.search(t) and (c.text or "").strip():
+                return c.text.strip()
+        num = ""
+        for c in parent:
+            t = getattr(c, "tag", "")
+            if isinstance(t, str) and t.endswith("번호") and (c.text or "").strip():
+                num = c.text.strip()
+                break
+        if num:
+            return f"별표{num}"
+    return "별표"
 
-    file_only = []
-    for u in units:
+
+def harvest_links(root):
+    """XML 전체에서 파일 링크 '값' 패턴 수확 → [(url, title)], 태그명 무관."""
+    out, seen = [], set()
+    parent_of = {c: p for p in root.iter() for c in p}
+    for el in root.iter():
+        v = (el.text or "").strip()
+        if not v or not LINK_PAT.search(v):
+            continue
+        if len(v) > 500 or "\n" in v:      # 본문 문장 속 우연 매치 방지
+            continue
+        url = v if v.startswith("http") else BASE + (v if v.startswith("/") else "/" + v)
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append((url, _title_near(el, parent_of.get(el))))
+    return out
+
+
+def licbyl_links(api_key, law_name, http_get_text):
+    """2차 소스: 별표서식 검색 API(target=licbyl)에서 같은 방식으로 수확."""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import quote
+    for tgt in ("licbyl", "licByl"):
         try:
-            has_text = bool(_child_text(u, ("별표내용",)))
-            link = _child_text(u, _LINK_KEYS)
-            if has_text:
-                continue
-            file_only.append((link or None, _title(u)))
+            url = (f"{BASE}/DRF/lawSearch.do?OC={api_key}&target={tgt}"
+                   f"&type=XML&display=50&query={quote(law_name)}")
+            body = http_get_text(url)
+            root = ET.fromstring(body)
+            got = harvest_links(root)
+            if got:
+                return got
         except Exception:
             continue
-    if not file_only:
+    return []
+
+
+def census(root, limit=14):
+    """진단용: 별표/서식/파일/링크 관련 태그 분포 + 링크 후보 요약 문자열."""
+    tags = {}
+    for el in root.iter():
+        t = getattr(el, "tag", "")
+        if isinstance(t, str) and re.search(r"별표|서식|파일|링크", t):
+            tags[t] = tags.get(t, 0) + 1
+    lines = [f"<{k}> ×{v}" for k, v in sorted(tags.items())[:limit]]
+    hits = harvest_links(root)
+    lines.append(f"[패턴 수확 링크] {len(hits)}건")
+    for u, t in hits[:5]:
+        lines.append(f"  · {t} → {u[:90]}")
+    return "\n".join(lines) if lines else "(별표/파일 관련 태그 없음)"
+
+
+# ── 본체 ────────────────────────────────────────────────────────────────
+def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
+                         http_get_text=None):
+    """반환: (추출 텍스트 섹션, 상태 섹션). http_get(url)->bytes 주입.
+    1차: 상세 XML 패턴 수확 → 2차: licbyl API (law_name·api_key 제공 시)."""
+    try:
+        cands = harvest_links(detail_root)
+    except Exception:
+        cands = []
+    src = "법령XML"
+    if not cands and law_name and api_key:
+        try:
+            getter = http_get_text or (lambda u: http_get(u).decode("utf-8", "ignore"))
+            cands = licbyl_links(api_key, law_name, getter)
+            src = "별표서식API"
+        except Exception:
+            cands = []
+    if not cands:
         return "", ""
 
-    # 자격 관련 제목 우선 정렬 (안전밸브 발동 시에도 중요한 것부터 채워지도록)
-    file_only.sort(key=lambda x: 0 if PRIORITY.search(x[1] or "") else 1)
-
+    cands.sort(key=lambda x: 0 if PRIORITY.search(x[1] or "") else 1)
     got, miss, used, tried = [], [], 0, 0
-    for link, title in file_only:
-        if link is None:
-            miss.append((title, "다운로드 링크 없음(PDF 전용 추정)"))
-            continue
+    for url, title in cands:
         if MAX_FILES and tried >= MAX_FILES:
-            miss.append((title, f"파일 수 밸브({MAX_FILES}) 초과 — ANNEX_MAX_FILES로 확장 가능"))
+            miss.append((title, f"파일 수 밸브({MAX_FILES}) — ANNEX_MAX_FILES로 확장 가능"))
             continue
         if used >= TOTAL_CHAR:
-            miss.append((title, f"분량 안전밸브({TOTAL_CHAR:,}자) 초과 — ANNEX_TOTAL_CHARS로 확장 가능"))
+            miss.append((title, f"분량 안전밸브({TOTAL_CHAR:,}자) — ANNEX_TOTAL_CHARS로 확장 가능"))
             continue
         tried += 1
-        url = link if link.startswith("http") else BASE + link
         try:
             data = http_get(url)
             txt = extract_hwp_text(data) if data else ""
@@ -171,7 +199,7 @@ def build_annex_sections(detail_root, http_get):
             txt = ""
         if txt:
             used += len(txt)
-            got.append((title, txt))  # ★무절단 — 별표 본문은 자르지 않는다
+            got.append((title, txt))          # ★무절단
         else:
             miss.append((title, "다운로드·추출 실패"))
     if used >= TOTAL_CHAR:
@@ -180,17 +208,12 @@ def build_annex_sections(detail_root, http_get):
     sec_text = ""
     if got:
         parts = [f"[{t or '별표'}]\n{x}" for t, x in got]
-        sec_text = "### ⭐ 별표(파일 추출: 자격 기준 등)\n" + "\n\n".join(parts)
+        sec_text = (f"### ⭐ 별표(파일 추출: 자격 기준 등 / 출처 {src})\n"
+                    + "\n\n".join(parts))
     sec_status = ""
     if miss:
         lines = [f"- {t or '별표'}: {why}" for t, why in miss]
         sec_status = ("### ⭐ 별표 상태: 파일 전용(내용 미확보)\n"
-                      "아래 별표는 파일로만 제공되거나 확보에 실패하여 본문에 내용이 없음.\n"
+                      "아래 별표는 파일 확보에 실패하여 본문에 내용이 없음.\n"
                       + "\n".join(lines))
     return sec_text, sec_status
-
-
-def _title(u):
-    num = _child_text(u, _NUM_KEYS)
-    t = _child_text(u, _TITLE_KEYS)
-    return f"별표{num} {t}".strip() if (num or t) else "별표"

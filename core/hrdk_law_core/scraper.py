@@ -11,6 +11,7 @@ hrdk_law_core.scraper
     laws = get_base_laws(api_key="YOUR_KEY", target_date="20260612")
 """
 
+import os  # ★2026-07-06 핫픽스: env 상한 읽기용 (docstring 문구에 가드가 속아 누락됐던 것)
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -228,7 +229,7 @@ def get_base_laws(api_key: str, target_date: str) -> list | None:
                     try:
                         from .annex import build_annex_sections
                         _ax_get = lambda u: requests.get(u, timeout=30, headers={"User-Agent": "Mozilla/5.0"}).content
-                        ax_text, ax_status = build_annex_sections(detail_root, _ax_get)
+                        ax_text, ax_status = build_annex_sections(detail_root, _ax_get, law_name=law_name, api_key=api_key)
                         if ax_text:
                             full_text += f"\n\n{ax_text}"
                         if ax_status:
