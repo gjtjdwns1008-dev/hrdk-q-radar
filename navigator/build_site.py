@@ -513,7 +513,8 @@ background:linear-gradient(90deg,var(--l1) 0 20%,var(--l2) 20% 40%,var(--l3) 40%
 .artlink:hover{background:var(--navy);color:#fff}
 .m2-law{font-size:13px;color:var(--mut)}
 .m2-art{font-weight:800}
-.m2-ext{color:var(--l2)}
+.m2-ext{display:inline-block;margin-top:22px;background:var(--navy);color:#fff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px}
+.m2-ext:hover{background:var(--l2)}
 .note,.note-sec{font-size:12.5px;color:var(--mut)}
 .nc-item{border:1.5px solid var(--line);border-radius:14px;background:#fff;padding:13px 15px;margin-top:10px}
 .nc-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -559,7 +560,7 @@ footer b{color:var(--navy)}
   <div class="toolbar"><div class="wrap">
     <div class="trow period"><span>기간</span>
       <select id="mfrom">@@M_OPTS@@</select><span>~</span><select id="mto">@@M_OPTS@@</select>
-      <span class="count">표시 중 <b id="cnt">0</b>건</span></div>
+      <span class="count"><b id="cnt">0</b>건 표시 중</span></div>
     <div class="trow">
       <select id="scope" aria-label="검색 범위"><option value="all">전체검색</option><option value="law">법령명</option><option value="cert">자격명칭</option><option value="detail">상세내용</option></select>
       <div class="search"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
