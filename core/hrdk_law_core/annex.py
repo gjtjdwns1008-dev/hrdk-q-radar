@@ -29,6 +29,7 @@ MAX_FILES = int(os.environ.get("ANNEX_MAX_FILES", "0"))
 PRIORITY = re.compile(r"자격|인력|기술|선임|배치|기준|검사|교육|안전관리자")
 LINK_PAT = re.compile(r"flDownload|flSeq=|\.hwpx?(?:\b|$)|\.pdf(?:\b|$)", re.I)
 TITLE_TAG = re.compile(r"제목|명$")
+FORM_PAT = re.compile(r"서식|별지|신청서|수수료|과태료|대장$|증$")   # 비(非)자격기준류
 _NSP = lambda x: re.sub(r"[\s\u318D\u00B7\u30FB\u2027]+", "", str(x or ""))
 
 
@@ -284,8 +285,12 @@ def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
         sec_text = f"### ⭐ 별표(파일 추출: 자격 기준 등 / 출처 {label})\n" + "\n\n".join(parts)
     sec_status = ""
     if miss:
-        lines = [f"- {t or '별표'}: {why}" for t, why in miss]
+        lines = []
+        for t, why in miss:
+            tag = " (서식류 — 자격 기준 아님)" if FORM_PAT.search(t or "") else ""
+            lines.append(f"- {t or '별표'}: {why}{tag}")
         sec_status = ("### ⭐ 별표 상태: 파일 전용(내용 미확보)\n"
                       "아래 별표는 파일 확보에 실패하여 본문에 내용이 없음.\n"
+                      "(참고: '서식류' 표시 항목은 행정 양식 — 자격 기준 판정과 무관)\n"
                       + "\n".join(lines))
     return sec_text, sec_status
