@@ -13,6 +13,7 @@ setup(
     python_requires=">=3.11",
     install_requires=[
         "pyhwp",
+        "pdfminer.six",
         "requests>=2.31.0",
         "urllib3>=2.0.0",
         "gspread>=5.12.0,<7",
