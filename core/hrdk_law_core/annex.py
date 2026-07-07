@@ -1,35 +1,38 @@
 # -*- coding: utf-8 -*-
 """
-annex.py v2.0 — 별표·서식 심층 수집기 (패턴 수확 방식, 2026-07-06)
+annex.py v2.1 — 별표·서식 심층 수집기 (철저 수집판, 2026-07-07)
 =============================================================================
-v1의 한계: 별표 링크가 담긴 XML '태그 이름'을 추정에 의존 → 실전 0건.
-v2 전략: 태그 이름을 믿지 않는다. 상세 XML 전체를 훑어 '값'이 파일 링크
-패턴(flDownload / flSeq= / .hwp)인 요소를 전부 수확한다. 태그가 무엇이든
-법제처 파일서버 주소의 생김새는 같기 때문이다.
-2차 소스: 법령 XML에서 못 찾으면 별표서식 전용 검색 API(target=licbyl)를
-같은 패턴 수확으로 시도한다.
-
+v2.0(패턴 수확) 대비 강화점 — "누락 없이" 원칙:
+  ① 이중 소스 상시 병합: 법령 상세 XML 수확 + 별표서식 API(licbyl) 수확을
+     항상 합치고 URL 중복 제거. (v2.0은 XML 실패 시에만 licbyl 폴백)
+     licbyl 결과는 항목 내 '법령명'이 다른 법령이면 걸러냄(동명 오염 방지).
+  ② 3포맷 판독: 파일 머리글로 자동 감지 — HWP5(OLE) / HWPX(zip) / PDF.
+     (v2.0은 HWP5만 — PDF 전용·HWPX 별표가 '실패'로 새던 구멍 봉합)
+  ③ 파일당 재시도 1회: 순간 네트워크 오류로 별표 하나를 놓치지 않게.
 설계 원칙(유지): 무절단 — 파일수·본문 절단 없음. 안전밸브만 env
 (ANNEX_TOTAL_CHARS 기본 120,000 / ANNEX_MAX_FILES 기본 0=무제한).
-안전핀(유지): 모든 실패는 '미확보' 표기로 강등 — 배치를 멈추지 않는다.
+안전핀(유지): 모든 실패는 '미확보' 표기 강등 — 배치 무중단.
 """
+import io
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 BASE = "https://www.law.go.kr"
 TOTAL_CHAR = int(os.environ.get("ANNEX_TOTAL_CHARS", "120000"))
 MAX_FILES = int(os.environ.get("ANNEX_MAX_FILES", "0"))
 PRIORITY = re.compile(r"자격|인력|기술|선임|배치|기준|검사|교육|안전관리자")
-LINK_PAT = re.compile(r"flDownload|flSeq=|\.hwp(?:\b|$)", re.I)
+LINK_PAT = re.compile(r"flDownload|flSeq=|\.hwpx?(?:\b|$)|\.pdf(?:\b|$)", re.I)
 TITLE_TAG = re.compile(r"제목|명$")
+_NSP = lambda x: re.sub(r"[\s\u318D\u00B7\u30FB\u2027]+", "", str(x or ""))
 
 
-# ── hwp5txt 3단 자가해결 (v1.3.1 유지) ─────────────────────────────────
+# ── hwp5txt 3단 자가해결 (v1.3.1 계승) ──────────────────────────────────
 def resolve_hwp5txt():
     exe = shutil.which("hwp5txt")
     if exe:
@@ -69,7 +72,12 @@ def _run_hwp5txt(mode, tmp):
     return ""
 
 
-def extract_hwp_text(data: bytes) -> str:
+def _clean(txt):
+    txt = re.sub(r"<표>", "\n[표]\n", txt)
+    return re.sub(r"\n{3,}", "\n\n", txt).strip()
+
+
+def _extract_hwp5(data: bytes) -> str:
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".hwp", delete=False) as f:
@@ -78,10 +86,7 @@ def extract_hwp_text(data: bytes) -> str:
         mode = resolve_hwp5txt()
         if mode[0] is None:
             return ""
-        txt = _run_hwp5txt(mode, tmp)
-        txt = re.sub(r"<표>", "\n[표]\n", txt)
-        txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
-        return txt
+        return _clean(_run_hwp5txt(mode, tmp))
     except Exception:
         return ""
     finally:
@@ -92,9 +97,53 @@ def extract_hwp_text(data: bytes) -> str:
                 pass
 
 
+def _extract_hwpx(data: bytes) -> str:
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        parts = []
+        for n in sorted(z.namelist()):
+            if n.startswith("Contents/section") and n.endswith(".xml"):
+                x = z.read(n).decode("utf-8", "ignore")
+                for p in re.findall(r"<hp:p [^>]*>(.*?)</hp:p>", x, re.S):
+                    t = "".join(re.findall(r"<hp:t[^>]*>(.*?)</hp:t>", p, re.S))
+                    if t.strip():
+                        parts.append(t)
+        s = "\n".join(parts)
+        s = s.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+        return _clean(s)
+    except Exception:
+        return ""
+
+
+def _extract_pdf(data: bytes) -> str:
+    try:
+        from pdfminer.high_level import extract_text
+        return _clean(extract_text(io.BytesIO(data)) or "")
+    except Exception:
+        return ""
+
+
+def extract_any(data: bytes) -> str:
+    """파일 머리글로 포맷 자동 감지 → HWP5/HWPX/PDF 텍스트."""
+    if not data or len(data) < 8:
+        return ""
+    head = data[:8]
+    if head[:4] == b"PK\x03\x04":               # HWPX (zip)
+        return _extract_hwpx(data)
+    if head[:5] == b"%PDF-":                     # PDF
+        return _extract_pdf(data)
+    if head == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":  # OLE → HWP5
+        return _extract_hwp5(data)
+    return _extract_hwp5(data)                   # 미상 → HWP5 시도
+
+
+# 하위호환 별칭 (기존 호출부·도구 보호)
+def extract_hwp_text(data: bytes) -> str:
+    return extract_any(data)
+
+
 # ── 패턴 수확 엔진 ───────────────────────────────────────────────────────
 def _title_near(el, parent):
-    """링크 요소 주변에서 제목 후보 찾기: 같은 부모의 '…제목/…명' 태그 우선."""
     if parent is not None:
         for c in parent:
             t = getattr(c, "tag", "")
@@ -112,14 +161,14 @@ def _title_near(el, parent):
 
 
 def harvest_links(root):
-    """XML 전체에서 파일 링크 '값' 패턴 수확 → [(url, title)], 태그명 무관."""
+    """XML 전체에서 파일 링크 '값' 패턴 수확 → [(url, title)] (태그명 무관)."""
     out, seen = [], set()
     parent_of = {c: p for p in root.iter() for c in p}
     for el in root.iter():
         v = (el.text or "").strip()
         if not v or not LINK_PAT.search(v):
             continue
-        if len(v) > 500 or "\n" in v:      # 본문 문장 속 우연 매치 방지
+        if len(v) > 500 or "\n" in v:
             continue
         url = v if v.startswith("http") else BASE + (v if v.startswith("/") else "/" + v)
         if url in seen:
@@ -130,25 +179,37 @@ def harvest_links(root):
 
 
 def licbyl_links(api_key, law_name, http_get_text):
-    """2차 소스: 별표서식 검색 API(target=licbyl)에서 같은 방식으로 수확."""
+    """별표서식 검색 API 수확 — 항목의 '법령명'이 다르면 배제(동명 오염 방지)."""
     import xml.etree.ElementTree as ET
     from urllib.parse import quote
+    want = _NSP(law_name)
     for tgt in ("licbyl", "licByl"):
         try:
             url = (f"{BASE}/DRF/lawSearch.do?OC={api_key}&target={tgt}"
-                   f"&type=XML&display=50&query={quote(law_name)}")
-            body = http_get_text(url)
-            root = ET.fromstring(body)
-            got = harvest_links(root)
-            if got:
-                return got
+                   f"&type=XML&display=100&query={quote(law_name)}")
+            root = ET.fromstring(http_get_text(url))
+            out = []
+            for item in list(root):
+                if len(list(item)) < 2:
+                    continue
+                bad = False
+                for c in item:
+                    t = getattr(c, "tag", "")
+                    if isinstance(t, str) and "법령명" in t and (c.text or "").strip():
+                        if _NSP(c.text) != want:
+                            bad = True
+                        break
+                if bad:
+                    continue
+                out.extend(harvest_links(item))
+            if out:
+                return out
         except Exception:
             continue
     return []
 
 
 def census(root, limit=14):
-    """진단용: 별표/서식/파일/링크 관련 태그 분포 + 링크 후보 요약 문자열."""
     tags = {}
     for el in root.iter():
         t = getattr(el, "tag", "")
@@ -165,26 +226,32 @@ def census(root, limit=14):
 # ── 본체 ────────────────────────────────────────────────────────────────
 def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
                          http_get_text=None):
-    """반환: (추출 텍스트 섹션, 상태 섹션). http_get(url)->bytes 주입.
-    1차: 상세 XML 패턴 수확 → 2차: licbyl API (law_name·api_key 제공 시)."""
+    """반환: (추출 텍스트 섹션, 상태 섹션).
+    ★v2.1: XML 수확 ∪ licbyl 수확 상시 병합(중복 URL 제거) + 파일당 재시도 1회."""
     try:
-        cands = harvest_links(detail_root)
+        xml_c = harvest_links(detail_root)
     except Exception:
-        cands = []
-    src = "법령XML"
-    if not cands and law_name and api_key:
+        xml_c = []
+    lic_c = []
+    if law_name and api_key:
         try:
             getter = http_get_text or (lambda u: http_get(u).decode("utf-8", "ignore"))
-            cands = licbyl_links(api_key, law_name, getter)
-            src = "별표서식API"
+            lic_c = licbyl_links(api_key, law_name, getter)
         except Exception:
-            cands = []
+            lic_c = []
+    seen, cands = set(), []
+    for src, pool in (("법령XML", xml_c), ("별표서식API", lic_c)):
+        for url, title in pool:
+            if url in seen:
+                continue
+            seen.add(url)
+            cands.append((url, title, src))
     if not cands:
         return "", ""
 
     cands.sort(key=lambda x: 0 if PRIORITY.search(x[1] or "") else 1)
-    got, miss, used, tried = [], [], 0, 0
-    for url, title in cands:
+    got, miss, used, tried, srcs = [], [], 0, 0, set()
+    for url, title, src in cands:
         if MAX_FILES and tried >= MAX_FILES:
             miss.append((title, f"파일 수 밸브({MAX_FILES}) — ANNEX_MAX_FILES로 확장 가능"))
             continue
@@ -192,24 +259,29 @@ def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
             miss.append((title, f"분량 안전밸브({TOTAL_CHAR:,}자) — ANNEX_TOTAL_CHARS로 확장 가능"))
             continue
         tried += 1
-        try:
-            data = http_get(url)
-            txt = extract_hwp_text(data) if data else ""
-        except Exception:
-            txt = ""
+        txt = ""
+        for _attempt in (1, 2):                    # ★재시도 1회
+            try:
+                data = http_get(url)
+                txt = extract_any(data) if data else ""
+            except Exception:
+                txt = ""
+            if txt:
+                break
         if txt:
             used += len(txt)
-            got.append((title, txt))          # ★무절단
+            got.append((title, txt))               # ★무절단
+            srcs.add(src)
         else:
-            miss.append((title, "다운로드·추출 실패"))
+            miss.append((title, "다운로드·추출 실패(재시도 포함)"))
     if used >= TOTAL_CHAR:
         print(f"    ⚠️ 별표 분량 안전밸브 발동({used:,}자) — 제외분은 상태 섹션에 표기")
 
     sec_text = ""
     if got:
         parts = [f"[{t or '별표'}]\n{x}" for t, x in got]
-        sec_text = (f"### ⭐ 별표(파일 추출: 자격 기준 등 / 출처 {src})\n"
-                    + "\n\n".join(parts))
+        label = "+".join(sorted(srcs)) or "법령XML"
+        sec_text = f"### ⭐ 별표(파일 추출: 자격 기준 등 / 출처 {label})\n" + "\n\n".join(parts)
     sec_status = ""
     if miss:
         lines = [f"- {t or '별표'}: {why}" for t, why in miss]
