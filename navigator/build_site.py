@@ -235,8 +235,14 @@ def r_build(rows):
         if eff: e["e"] = fmt_eff(eff)
         det = str(r.get(RCOL["detail"]) or "").strip()    # 관련법령 탭의 상세 분석 결과(직접 보유)
         if det: e["d"] = det
-        rsn = str(r.get(RCOL["reason"]) or "").strip()    # 검토사유(있을 때만 팝업에 노출)
-        if rsn: e["r"] = rsn
+        rsn = str(r.get(RCOL["reason"]) or "").strip()    # 검토사유
+        # ★공개 화면 순화(2026-07-07): 내부 운영 문구(별표 미확보·다운로드 실패·자동검증
+        #   무효화 등)는 국민 눈높이 고정 문구로 치환. 원문 사유는 시트(내부)에서만 열람.
+        if rsn:
+            if re.search(r"미확보|다운로드|추출 실패|자동검증|파일 전용", rsn):
+                e["r"] = "세부 자격 기준(별표) 자료를 보완·검토 중입니다."
+            else:
+                e["r"] = rsn
         lk = parse_links(r.get(RCOL["links"]))             # 조문별 다이렉트 링크 [{t,u}]
         if lk: e["lk"] = lk
         ei = len(entries); entries.append(e)
