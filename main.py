@@ -273,6 +273,23 @@ def main():
     print("🚀 [HRDK Q-RADAR] 시작\n" + "=" * 50)
     start_time = time.time()
 
+    # ── ★조기 퇴근 게이트(2026-07-07): 무작동 슬롯의 헛부팅 제거 ──────────
+    #    하루 48슬롯 설계상, 그날 목표(실행일-1)가 이미 🟢이면 나머지 ~47회는
+    #    지식베이스 재구축(대장 1,719행 리드) 전에 총괄현황표 한 줄만 읽고 퇴근.
+    #    · MANUAL_DATE 실행은 게이트 통과(특정일 강제 처리 목적)
+    #    · 자격명칭최신화 등 부가작업은 '그날의 성공 런' 1회 수행으로 충분
+    if not os.environ.get("MANUAL_DATE", "").strip():
+        try:
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            from hrdk_law_core.sheets import read_last_success_date as _rlsd
+            _tgt = (_dt.now(_tz(_td(hours=9))) - _td(days=1)).strftime("%Y%m%d")
+            _ok = _rlsd(GCP_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_URL)
+            if _ok and _ok >= _tgt:
+                print(f"ℹ️ {_tgt}까지 이미 처리 완료(마지막 성공일 {_ok}) — 조기 종료(무작동 슬롯).")
+                sys.exit(0)
+        except Exception as _e:
+            print(f"  ⚠️ 조기 게이트 확인 불가({str(_e)[:40]}) — 정상 부팅으로 진행")
+
     kb = QRadarKB(DB_PATH)
     print(f"📚 지식베이스 로드 완료 ({DB_PATH})")
 

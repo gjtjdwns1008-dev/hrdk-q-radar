@@ -105,6 +105,13 @@ def _sanitize_review(reason, related_certs, source_text, qnet_certs_text):
             return "자동검증에서 본 법령 원문에 없는 자격종목 언급이 감지되어 사유를 무효화함. 원문 및 별표 파일 직접 확인 필요."
     return r
 
+try:  # ★라벨 주석화(2026-07-07): 신규 행도 "B (영업요건형)" 규약으로 기록
+    from hrdk_law_core.certs import (label_track1_type, label_track1_risk,
+                                     label_track2_code)
+except Exception:  # core 미설치 등 극단 상황 — 원시 코드 유지(무해)
+    label_track1_type = label_track1_risk = label_track2_code = (lambda v: v)
+
+
 def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     # 🌟 [Q-RADAR 통합 프롬프트] — monitor(연관도·활용도) × RADAR(우대·투트랙) 병합
     prompt = f"""
@@ -353,9 +360,9 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
             "활용도_상세": data.get("활용도_상세", "") if 연관도 in ("연관높음", "단순관련") else "",
             "조문 요약": data.get("조문_요약", ""),
             "우대분류": data.get("우대분류", "기타"),
-            "Track1_취급유형": _t1_type,
-            "Track1_위험도": _t1_risk,
-            "Track2_효용코드": data.get("Track2_효용코드", "Ⅳ-0"),
+            "Track1_취급유형": label_track1_type(_t1_type),
+            "Track1_위험도": label_track1_risk(_t1_risk),
+            "Track2_효용코드": label_track2_code(data.get("Track2_효용코드", "Ⅳ-0")),
             "중처법대상": data.get("중처법대상", "비대상"),
             "상세 분석 결과": data.get("상세_분석", ""),
             "근거조문": names_str,
