@@ -51,4 +51,4 @@ jobs:
           WORKNET_API_KEY: ${{ secrets.WORKNET_API_KEY }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           MANUAL_DATE: ${{ github.event.inputs.manual_date }}
-        run: python main.py
+        run: python pipeline/main.py

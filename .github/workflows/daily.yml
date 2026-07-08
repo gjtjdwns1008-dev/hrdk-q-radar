@@ -101,4 +101,4 @@ jobs:
           WORKNET_API_KEY: ${{ secrets.WORKNET_API_KEY }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}          # 새도우 중엔 시크릿 미등록 = 미발송
           MANUAL_DATE: ${{ github.event.inputs.manual_date }}
-        run: python main.py
+        run: python pipeline/main.py

@@ -87,7 +87,7 @@ jobs:
           # 주석을 풀어 모델을 고정할 수 있습니다.
           # LLM_MODEL: "gemini-2.5-flash"
         run: |
-          python briefing_maker.py
+          python pipeline/briefing_maker.py
 
       # 7) 생성된 보고서를 Artifact로 업로드 (메일 외 백업 다운로드 경로)
       - name: 보고서 업로드
