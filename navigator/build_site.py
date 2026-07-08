@@ -451,7 +451,7 @@ PAGE = r"""<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700;900&display=swap" rel="stylesheet">
 <style>
 /* ═══ B안 「법령 노선도」 — 교통 사인 시스템: 노선색·역명판·정거장 ═══ */
-:root{--bg:#FAFBFD;--ink:#101828;--navy:#1F3864;--mut:#5D6B7E;--line:#E4E8EF;
+:root{--bg:#FAFBFD;--ink:#101828;--navy:#1F3864;--mut:#5D6B7E;--line:#E4E8EF;--hrdk:#0072CE;
 --l1:#C0492F;--l2:#1F6FB2;--l3:#0F6E56;--l4:#5B4BB0;--l5:#8A8F98;--go:#00A86B;
 --sans:'Pretendard',-apple-system,sans-serif;--accent:#1F6FB2;--hrdk:#005EB8}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -561,7 +561,10 @@ border:1.5px solid #F2DFAE;border-radius:16px;padding:14px 18px;margin-bottom:16
 
 /* 분류 안내 */
 .clsguide{border:1.5px solid var(--line);border-radius:16px;background:#fff;margin:22px 0 6px;overflow:hidden}
-.clsguide summary{list-style:none;display:flex;align-items:center;gap:9px;padding:14px 18px;font-weight:800;font-size:14.5px;cursor:pointer}
+.clsguide summary{list-style:none;display:flex;align-items:center;gap:9px;padding:14px 18px;font-weight:800;font-size:14.5px;cursor:pointer;background:var(--hrdk);color:#fff}
+.clsguide summary:hover{filter:brightness(1.07)}
+.clsguide summary .cg-arrow{color:#fff}
+.clsguide summary .cg-sub{color:rgba(255,255,255,.78)}
 .clsguide summary::-webkit-details-marker{display:none}
 .cg-ic{font-size:16px}.cg-sub{font-weight:500;font-size:12.5px;color:var(--mut)}
 .cg-arrow{margin-left:auto;color:var(--mut);transition:transform .18s}
