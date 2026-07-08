@@ -1,0 +1,12 @@
+# migrate_tool/.gitignore — 이 내용을 migrate_tool/.gitignore 로 저장
+# (로컬 작업 부산물이 레포에 커밋되는 것을 차단)
+*.json
+!package*.json
+.env
+*.xlsx
+백업_*.xlsx
+*미리보기*.xlsx
+usage_cache*
+annex_진단.txt
+__pycache__/
+migration.zip
