@@ -205,6 +205,35 @@ def decide_preferred(row):
     return ""
 
 
+def _preflight():
+    """실행 전 준비물 점검 — 부족하면 뭘 해야 하는지 한국어로 안내"""
+    ok = True
+    if not (HERE / ".env").exists():
+        if (HERE / "env.example").exists():
+            (HERE / ".env").write_text((HERE / "env.example").read_text(encoding="utf-8"), encoding="utf-8")
+            print("📄 .env 파일이 없어서 방금 만들어 뒀습니다 (env.example 복사본).")
+        else:
+            print("📄 .env 파일이 없습니다.")
+        print("   👉 메모장으로  migrate_tool 폴더의 .env  를 열어 세 시트 URL을 붙여넣어 주세요.")
+        print("      (구글시트를 브라우저로 열고 주소창의 URL 전체를 복사하면 됩니다)")
+        ok = False
+    else:
+        env = _load_env_file()
+        for k in ("RADAR_SHEET", "MONITOR_SHEET", "QRADAR_SHEET"):
+            v = env.get(k, "")
+            if not v or "여기에" in v:
+                print(f"   ⚠️ .env의 {k} 칸이 아직 비어있어요 → 메모장으로 열어 해당 시트 URL을 붙여넣어 주세요.")
+                ok = False
+    if not (HERE / "gcp-key.json").exists():
+        print("🔑 gcp-key.json(서비스계정 열쇠)이 이 폴더에 없습니다.")
+        print("   👉 HRDK-LAW-RADAR의 local_backfill 폴더에서 쓰던 gcp-key.json을 이 폴더로 복사하세요.")
+        print("   👉 그리고 새 Q-RADAR 시트의 [공유]에 그 서비스계정 이메일이 '편집자'로 있는지 확인!")
+        ok = False
+    if not ok:
+        print("\n준비물을 채운 뒤, 다시 실행해 주세요:  python run_migration.py")
+    return ok
+
+
 def main():
     print("=" * 62)
     print(f"🚚 Q-RADAR 이관 도구 — 소스:{SOURCE} / {'★실제 반영★' if APPLY else '미리보기만'}")
@@ -376,7 +405,9 @@ def main():
 
     # ── 6) 실제 반영 (APPLY=1 + live에서만) ──
     if not APPLY:
-        print("\n✅ 미리보기만 생성했습니다. 반영하려면: python run_migration.py live apply")
+        print("\n✅ 미리보기만 생성했습니다. (시트는 아무것도 바뀌지 않았어요)")
+        print("   👉 위 경로의 '이관_미리보기.xlsx'를 열어 확인한 뒤,")
+        print("      다시  python run_migration.py  실행 → 2번(실제 반영)을 고르세요.")
         return
     if SOURCE != "live":
         print("\n⛔ APPLY는 SOURCE=live 에서만 허용됩니다 (로컬 xlsx로는 반영 불가).")
@@ -453,4 +484,28 @@ def main():
 
 
 if __name__ == "__main__":
+    if not _args:   # ★인자 없이 실행 = 초심자 모드: 번호로 고르는 한국어 메뉴
+        print("=" * 62)
+        print("🚚 Q-RADAR 이관 도구 — 쉬운 모드")
+        print("=" * 62)
+        if not _preflight():
+            sys.exit(0)
+        print("\n무엇을 할까요?")
+        print("  1) 미리보기  — 라이브 시트를 읽어 '이관_미리보기.xlsx'만 생성 (아무것도 안 바꿈, 안전)")
+        print("  2) 실제 반영 — 새 Q-RADAR 시트에 이관 (빈 대장에만 들어가는 안전장치 있음)")
+        print("  0) 종료")
+        choice = input("\n번호를 입력하고 Enter: ").strip()
+        if choice == "1":
+            SOURCE = "live"
+            APPLY = False
+        elif choice == "2":
+            SOURCE = "live"
+            confirm = input("⚠️ 새 시트에 실제로 기록합니다. 진행하려면 '반영' 이라고 입력: ").strip()
+            if confirm != "반영":
+                print("취소했습니다. (아무 변화 없음)")
+                sys.exit(0)
+            APPLY = True
+        else:
+            print("종료합니다. (아무 변화 없음)")
+            sys.exit(0)
     main()
