@@ -1,24 +1,25 @@
-# 민감 정보 (실수로라도 커밋 방지) — Public 레포 안전장치
-*.env
-.env
-.env.*
-credentials.json
-service_account*.json
-*secret*.json
-gcp_*.json
-*.pem
-*.key
+# ── 레포 루트 .gitignore (이 내용을 루트에 .gitignore 로 저장) ──
 
-# 스크랩 중간 데이터 (분리 구조용 — 클라우드에서만 사용, 커밋 불필요)
-scraped_data/
-
-# 파이썬
+# 파이썬 부산물
 __pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
+*.py[cod]
+*.egg-info/
+build/
 
-# OS
+# 비밀·환경 파일 (공개 레포 보호막 — 실수 커밋 원천 차단)
+.env
+*.env
+*service_account*.json
+*credentials*.json
+gcp*.json
+
+# SQLite 작업 중 임시파일 (data/hrdk_law.db 본체는 커밋 대상!)
+*.db-journal
+*.db-wal
+*.db-shm
+
+# OS 쓰레기
 .DS_Store
 Thumbs.db
+
+# ⚠️ dist/ 는 절대 추가 금지 — Pages 배포용 커밋 대상임
