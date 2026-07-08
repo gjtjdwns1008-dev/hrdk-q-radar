@@ -619,7 +619,7 @@ footer b{color:var(--navy)}
               <tr><td><span class="cg-code">N</span></td><td><b>무관</b> — 자격이 직역 진입 조건 아님(부가우대만)</td></tr>
               <tr><td><span class="cg-code">L</span></td><td><b>저위험</b> — 학력·경력·유사자격으로 우회 가능</td></tr>
               <tr><td><span class="cg-code">M</span></td><td><b>중위험</b> — 복수 자격 중 택일로 대체 가능</td></tr>
-              <tr><td><span class="cg-code warn">H</span></td><td><b>고위험 ★</b> — 자격+경력 동시 요구(경력이음 도입 시 모순)</td></tr>
+              <tr><td><span class="cg-code warn">H</span></td><td><b>고위험 ★</b> — 자격+경력 동시 요구</td></tr>
               <tr><td><span class="cg-code danger">C</span></td><td><b>임계위험 ★★</b> — 단일 자격만 인정(대체 경로 없음)</td></tr>
               <tr><td><span class="cg-code dim">X</span></td><td><b>해당없음</b> — 취급유형이 Z일 때 (Z↔X 짝)</td></tr>
             </table>
