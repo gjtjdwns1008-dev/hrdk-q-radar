@@ -241,6 +241,7 @@ def build_ov(midx, rc_idx):
     wk = lambda x: x - datetime.timedelta(days=x.weekday())
     w0 = wk(today) - datetime.timedelta(weeks=7)
     wcnt, tcnt = Counter(), Counter()
+    t_idx = defaultdict(list)
     lim30 = today - datetime.timedelta(days=30)
     for d, rl in by.items():
         dt = datetime.date(int(d[:4]), int(d[4:6]), int(d[6:8]))
@@ -249,11 +250,14 @@ def build_ov(midx, rc_idx):
         if dt >= lim30:
             for r in rl:
                 if str(r.get("연관도") or "").strip() in ("연관높음", "단순관련"):
+                    i = midx.get((_nospace(r.get("법령명")), digits(r.get("시행일자"))))
                     for c in split_certs(r.get("관련 종목")):
                         tcnt[c] += 1
+                        if i is not None:
+                            t_idx[c].append(i)
     spark = [[f"{w.month}/{w.day}~", wcnt.get(w, 0)]
              for w in (w0 + datetime.timedelta(weeks=i) for i in range(8))]
-    top = [[c, n, rc_idx.get(c, -1)] for c, n in tcnt.most_common(10)]
+    top = [[c, n, t_idx.get(c, [])] for c, n in tcnt.most_common(10)]
     fresh = max(sched) if sched else (dates[0] if dates else "")
     fresh = f"{fresh[:4]}-{fresh[4:6]}-{fresh[6:8]}" if fresh else "—"
     return ovd, spark, top, fresh
@@ -733,7 +737,7 @@ footer b{color:var(--navy)}
   </div>
   <div class="ov-strip">
     <div class="ov-card"><h3>주간 수집 추이 <span>최근 8주 · 검토 법령 수</span></h3><div class="ov-spark" id="ov-spark"></div></div>
-    <div class="ov-card"><h3>기간 TOP 10 종목 <span>최근 30일 최다 등장</span></h3><div class="ov-chips" id="ov-top"></div></div>
+    <div class="ov-card"><h3>기간 TOP 10 종목 <span>최근 30일 · 관계법령 등장 횟수</span></h3><div class="ov-chips" id="ov-top"></div></div>
   </div>
   <p class="ov-today" id="ov-today"></p>
   <div class="ov-tblcard">
@@ -1011,14 +1015,18 @@ function ovDetail(i,gi){var e=OVD[i].L[gi];if(!e)return;var h;
   if(e.ct&&e.ct.length)h+='<div class="m-sec"><h4>검토된 종목(참고)</h4><div class="m-chips">'+e.ct.map(function(c){return '<span class="chip">'+escq(c)+'</span>';}).join('')+'</div></div>';
   h+='<a class="m-ext" href="'+escq(lawUrl(e.n))+'" target="_blank" rel="noopener">법제처에서 원문 보기 \u2192</a>';}
  mb2.innerHTML=h;openM(modal2);}
+function ovTopOpen(k){var t=OVTOP[k];if(!t)return;var idxs=t[2]||[];
+ var h='<h2 class="m-title">'+escq(t[0])+' \u00b7 최근 30일 관계법령 '+idxs.length+'건</h2><div class="m-meta">이 종목이 등장한 제\u00b7개정 법령 \u00b7 누르면 상세 분석이 열립니다</div>';
+ idxs.forEach(function(i){var d=MLAWS[i];if(!d)return;
+  h+='<button type="button" class="ov-lrow" onclick="ovLawByIdx('+i+')"><span class="nm">'+escq(d.law)+'</span><div class="mt">'+escq(d.meta||'')+'</div></button>';});
+ mb.innerHTML=h;openM(modal);}
+function ovLawByIdx(i){var d=MLAWS[i];if(!d)return;mb2.innerHTML=monitorHTML(d);openM(modal2);}
 (function(){
  var sp=document.getElementById('ov-spark');if(sp&&OVSPARK.length){var mx=1;OVSPARK.forEach(function(w){if(w[1]>mx)mx=w[1];});
   sp.innerHTML=OVSPARK.map(function(w){return '<div class="b" style="height:'+(8+Math.round(w[1]/mx*66))+'px" title="'+w[0]+' '+w[1]+'건"><i>'+w[1]+'</i><u>'+w[0]+'</u></div>';}).join('');}
  var tp=document.getElementById('ov-top');
- if(tp){tp.innerHTML=OVTOP.length?OVTOP.map(function(t,k){return '<button type="button" class="ov-chip" data-j="'+t[2]+'">'+escq(t[0])+'<small>\u00d7'+t[1]+'</small></button>';}).join(''):'<span class="ov-nil">최근 30일 데이터 없음</span>';
-  [].slice.call(tp.querySelectorAll('.ov-chip')).forEach(function(c){c.addEventListener('click',function(){var j=+this.dataset.j;if(j<0)return;
-   tabs.forEach(function(t){if(t.dataset.view==='radar'){tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');for(var k in views)views[k].hidden=(k!=='radar');}});
-   window.scrollTo(0,0);setTimeout(function(){openCert(j);},80);});});}
+ if(tp){tp.innerHTML=OVTOP.length?OVTOP.map(function(t,k){return '<button type="button" class="ov-chip" data-k="'+k+'" title="누르면 해당 법령 목록이 열립니다">'+escq(t[0])+'<small>\u00d7'+t[1]+'</small></button>';}).join(''):'<span class="ov-nil">최근 30일 데이터 없음</span>';
+  [].slice.call(tp.querySelectorAll('.ov-chip')).forEach(function(c){c.addEventListener('click',function(){ovTopOpen(+this.dataset.k);});});}
  var td=document.getElementById('ov-today');if(td&&OVD.length){var x=OVD[0];
   td.innerHTML=(x.g||x.t)?('오늘의 요약 \u2014 <b>'+x.d+'</b> 수집 <b>'+x.g+'건</b> \u00b7 검토 <b>'+x.t+'건</b> 중 관계법령 <b>'+x.r+'건</b> \u00b7 우대사항 <b>'+x.p+'건</b> '+ovBadges(x.b||{})):('최근 일자 <b>'+x.d+'</b> \u2014 개정 법령 없음');}
  ovRender();
