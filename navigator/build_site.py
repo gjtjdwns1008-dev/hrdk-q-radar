@@ -692,7 +692,8 @@ footer b{color:var(--navy)}
 .ov-pb{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin:1.5px 3px 1.5px 0;white-space:nowrap}
 .ov-pb.m{background:#FBEDEA;color:var(--l1)}.ov-pb.j{background:#EAF2FB;color:var(--l2)}
 .ov-pb.e{background:#F0EDFA;color:var(--l4)}.ov-pb.h{background:#EDF7F1;color:var(--l3)}
-.ov-gv{font-weight:800;color:var(--mut);font-size:13px}
+.ov-gv{display:inline-block;border:1.5px solid #D7E3F2;background:#F4F8FD;color:var(--navy);font-weight:800;font-size:13px;min-width:64px;padding:6px 10px;border-radius:10px;text-align:center}
+.ov-gv.zero{background:#F6F7F9;border-color:#E7EAF0;color:#B6BEC9;font-weight:700}
 .ov-dash{color:#B6BEC9}.ov-nil{color:#9AA5B4;font-size:12.5px}
 .ov-more{display:block;width:100%;border:none;background:#F7F9FC;color:var(--mut);font-weight:700;font-size:13px;padding:12px;cursor:pointer}
 .ov-more:hover{color:var(--navy)}
@@ -990,7 +991,7 @@ function ovCnt(v,fn){return v?'<button type="button" class="ov-cnt" onclick="'+f
 var OV_PAGE=30,ovShown=0;
 function ovRow(x,i){
  return '<tr><td data-l="날짜"><span class="ov-dt">'+x.d+'<small>'+x.w+'요일</small></span></td>'
- +'<td data-l="총 제·개정법령"><span class="ov-gv">'+x.g+'건</span></td>'
+ +'<td data-l="총 제·개정법령"><span class="ov-gv'+(x.g?'':' zero')+'">'+x.g+'건</span></td>'
  +'<td data-l="전체 검토">'+ovCnt(x.t,"ovOpen1("+i+",'all')")+'</td>'
  +'<td data-l="관계법령">'+ovCnt(x.r,"ovOpen1("+i+",'rel')")+'</td>'
  +'<td data-l="우대사항">'+ovCnt(x.p,"ovOpen1("+i+",'pref')")+'</td>'
