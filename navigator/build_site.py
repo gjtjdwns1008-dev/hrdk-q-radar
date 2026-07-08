@@ -675,9 +675,10 @@ footer b{color:var(--navy)}
 .ov-chip small{font-weight:600;opacity:.65;margin-left:4px}
 .ov-today{margin-top:18px;font-size:13.5px;color:var(--mut)}
 .ov-today b{color:var(--ink)}
-.ov-tblcard{margin-top:12px;background:#fff;border:2px solid var(--line);border-radius:16px;overflow:hidden}
-.ov-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
-.ov-tbl th{background:#F4F6FA;text-align:left;padding:11px 14px;font-size:12px;color:var(--mut);font-weight:700;border-bottom:1.5px solid var(--line)}
+.ov-tblcard{margin-top:12px;background:#fff;border:2px solid var(--line);border-radius:16px}
+.ov-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px}
+.ov-tbl th{position:sticky;top:0;z-index:2;background:#F4F6FA;text-align:left;padding:11px 14px;font-size:12px;color:var(--mut);font-weight:700;border-bottom:1.5px solid var(--line)}
+.ov-tbl th:first-child{border-radius:14px 0 0 0}.ov-tbl th:last-child{border-radius:0 14px 0 0}
 .ov-tbl td{padding:11px 14px;border-bottom:1px solid #EEF1F6;vertical-align:middle}
 .ov-tbl tr:last-child td{border-bottom:none}
 .ov-tbl tbody tr:hover td{background:#FAFCFF}
@@ -695,7 +696,7 @@ footer b{color:var(--navy)}
 .ov-gv{display:inline-block;border:1.5px solid #D7E3F2;background:#F4F8FD;color:var(--navy);font-weight:800;font-size:13px;min-width:64px;padding:6px 10px;border-radius:10px;text-align:center}
 .ov-gv.zero{background:#F6F7F9;border-color:#E7EAF0;color:#B6BEC9;font-weight:700}
 .ov-dash{color:#B6BEC9}.ov-nil{color:#9AA5B4;font-size:12.5px}
-.ov-more{display:block;width:100%;border:none;background:#F7F9FC;color:var(--mut);font-weight:700;font-size:13px;padding:12px;cursor:pointer}
+.ov-more{display:block;width:100%;border:none;background:#F7F9FC;color:var(--mut);font-weight:700;font-size:13px;padding:12px;cursor:pointer;border-radius:0 0 14px 14px}
 .ov-more:hover{color:var(--navy)}
 .ov-csv{margin:14px 0 4px;display:flex;justify-content:flex-end}
 .ov-csv button{border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px;font-size:12.5px;font-weight:700;color:var(--mut);cursor:pointer}
@@ -742,7 +743,7 @@ footer b{color:var(--navy)}
   </div>
   <p class="ov-today" id="ov-today"></p>
   <div class="ov-tblcard">
-    <table class="ov-tbl"><thead><tr><th>날짜</th><th>총 제·개정법령</th><th>전체 검토</th><th>관계법령</th><th>우대사항</th><th>우대 내역</th></tr></thead><tbody id="ov-tb"></tbody></table>
+    <table class="ov-tbl"><thead><tr><th>날짜</th><th>총 제·개정법령</th><th>총 검토 법령</th><th>관계법령</th><th>우대법령</th><th>우대 내역</th></tr></thead><tbody id="ov-tb"></tbody></table>
     <button type="button" class="ov-more" id="ov-more">지난 이력 더 보기 ▾</button>
   </div>
   <div class="ov-csv"><button type="button" id="ov-csv">⬇ 표 데이터 CSV 다운로드</button></div>
@@ -992,14 +993,14 @@ var OV_PAGE=30,ovShown=0;
 function ovRow(x,i){
  return '<tr><td data-l="날짜"><span class="ov-dt">'+x.d+'<small>'+x.w+'요일</small></span></td>'
  +'<td data-l="총 제·개정법령"><span class="ov-gv'+(x.g?'':' zero')+'">'+x.g+'건</span></td>'
- +'<td data-l="전체 검토">'+ovCnt(x.t,"ovOpen1("+i+",'all')")+'</td>'
+ +'<td data-l="총 검토 법령">'+ovCnt(x.t,"ovOpen1("+i+",'all')")+'</td>'
  +'<td data-l="관계법령">'+ovCnt(x.r,"ovOpen1("+i+",'rel')")+'</td>'
- +'<td data-l="우대사항">'+ovCnt(x.p,"ovOpen1("+i+",'pref')")+'</td>'
+ +'<td data-l="우대법령">'+ovCnt(x.p,"ovOpen1("+i+",'pref')")+'</td>'
  +'<td data-l="우대 내역">'+ovBadges(x.b||{})+'</td></tr>';}
 function ovRender(){var tb=document.getElementById('ov-tb');if(!tb)return;ovShown=Math.min(ovShown+OV_PAGE,OVD.length);var h='';for(var i=0;i<ovShown;i++)h+=ovRow(OVD[i],i);tb.innerHTML=h;var mo=document.getElementById('ov-more');if(mo)mo.style.display=ovShown<OVD.length?'block':'none';}
 function ovOpen1(i,mode){var x=OVD[i];if(!x||!x.L)return;
  var list=x.L.filter(function(e){if(mode==='pref')return e.pf;if(mode==='rel')return e.i!=null;return true;});
- var T={all:'전체 검토 법령',rel:'관계법령',pref:'우대사항'}[mode];
+ var T={all:'총 검토 법령',rel:'관계법령',pref:'우대법령'}[mode];
  var h='<h2 class="m-title">'+x.d+' \u00b7 '+T+' '+list.length+'건</h2><div class="m-meta">법령을 누르면 상세 분석이 열립니다</div>';
  list.forEach(function(e){var gi=x.L.indexOf(e);var nm=e.i!=null?(MLAWS[e.i]?MLAWS[e.i].law:''):e.n;
   var mt;if(e.i!=null){var d0=MLAWS[e.i];mt=d0?escq(d0.meta||''):'';}
@@ -1029,11 +1030,11 @@ function ovLawByIdx(i){var d=MLAWS[i];if(!d)return;mb2.innerHTML=monitorHTML(d);
  if(tp){tp.innerHTML=OVTOP.length?OVTOP.map(function(t,k){return '<button type="button" class="ov-chip" data-k="'+k+'" title="누르면 해당 법령 목록이 열립니다">'+escq(t[0])+'<small>\u00d7'+t[1]+'</small></button>';}).join(''):'<span class="ov-nil">최근 30일 데이터 없음</span>';
   [].slice.call(tp.querySelectorAll('.ov-chip')).forEach(function(c){c.addEventListener('click',function(){ovTopOpen(+this.dataset.k);});});}
  var td=document.getElementById('ov-today');if(td&&OVD.length){var x=OVD[0];
-  td.innerHTML=(x.g||x.t)?('오늘의 요약 \u2014 <b>'+x.d+'</b> 수집 <b>'+x.g+'건</b> \u00b7 검토 <b>'+x.t+'건</b> 중 관계법령 <b>'+x.r+'건</b> \u00b7 우대사항 <b>'+x.p+'건</b> '+ovBadges(x.b||{})):('최근 일자 <b>'+x.d+'</b> \u2014 개정 법령 없음');}
+  td.innerHTML=(x.g||x.t)?('오늘의 요약 \u2014 <b>'+x.d+'</b> 수집 <b>'+x.g+'건</b> \u00b7 검토 <b>'+x.t+'건</b> 중 관계법령 <b>'+x.r+'건</b> \u00b7 우대법령 <b>'+x.p+'건</b> '+ovBadges(x.b||{})):('최근 일자 <b>'+x.d+'</b> \u2014 개정 법령 없음');}
  ovRender();
  var mo=document.getElementById('ov-more');if(mo)mo.addEventListener('click',ovRender);
  var cv=document.getElementById('ov-csv');if(cv)cv.addEventListener('click',function(){
-  var rows=[['날짜','총 제·개정법령','전체 검토','관계법령','우대사항','우대 내역']];
+  var rows=[['날짜','총 제·개정법령','총 검토 법령','관계법령','우대법령','우대 내역']];
   OVD.forEach(function(x){rows.push([x.d,x.g,x.t,x.r,x.p,Object.keys(x.b||{}).map(function(k){return k+' '+x.b[k];}).join(' \u00b7 ')]);});
   var blob=new Blob(['\ufeff'+rows.map(function(r){return r.join(',');}).join('\n')],{type:'text/csv'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='총괄현황.csv';a.click();});
