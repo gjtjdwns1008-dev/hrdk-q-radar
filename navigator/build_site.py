@@ -178,7 +178,7 @@ def load_overview():
                 os.environ.get("QRADAR_OV_WS", "총괄현황표")).get_all_records()
     except Exception:
         return []
-    out = set()
+    out = {}
     for r in rows:
         d = digits(r.get("시행일자"))
         if len(d) != 8:
@@ -186,8 +186,11 @@ def load_overview():
         st = str(r.get("모니터링 상태") or "")
         if any(k in st for k in ("❌", "🔴", "실패")):
             continue
-        out.add(d)
-    return sorted(out, reverse=True)
+        try:
+            out[d] = int(digits(r.get("총 검토건수")) or 0)
+        except Exception:
+            out[d] = 0
+    return out
 
 
 def build_ov(midx, rc_idx):
@@ -208,7 +211,6 @@ def build_ov(midx, rc_idx):
                 or str(r.get("연관도") or "").strip() == "우대"]
         pset = set(map(id, pref))
         b = Counter(str(r.get("우대분류") or "").strip() for r in pref)
-        up = sum(1 for r in rl if "대폭 증가" in str(r.get("활용도_구분") or ""))
         L = []
         for r in rl:
             k = (_nospace(r.get("법령명")), digits(r.get("시행일자")))
@@ -226,10 +228,12 @@ def build_ov(midx, rc_idx):
                     e["ct"] = cs
             if id(r) in pset:
                 e["pf"] = 1
+                pn = str(r.get("우대분류") or "").strip()
+                e["pn"] = pn if pn in _REAL_PREF else "기타"
             L.append(e)
         dt = datetime.date(int(d[:4]), int(d[4:6]), int(d[6:8]))
         ovd.append({"d": f"{d[:4]}-{d[4:6]}-{d[6:8]}", "w": WD[dt.weekday()],
-                    "st": "ok" if rl else "none", "up": up,
+                    "g": sched.get(d, len(rl)),
                     "t": len(rl), "r": len(rel), "p": len(pref),
                     "b": {k2: v for k2, v in b.items() if k2 in _REAL_PREF}, "L": L})
     # 스파크라인(최근 8주) + TOP5(최근 30일, 관계법령 기준)
@@ -249,8 +253,8 @@ def build_ov(midx, rc_idx):
                         tcnt[c] += 1
     spark = [[f"{w.month}/{w.day}~", wcnt.get(w, 0)]
              for w in (w0 + datetime.timedelta(weeks=i) for i in range(8))]
-    top = [[c, n, rc_idx.get(c, -1)] for c, n in tcnt.most_common(5)]
-    fresh = sched[0] if sched else (dates[0] if dates else "")
+    top = [[c, n, rc_idx.get(c, -1)] for c, n in tcnt.most_common(10)]
+    fresh = max(sched) if sched else (dates[0] if dates else "")
     fresh = f"{fresh[:4]}-{fresh[4:6]}-{fresh[6:8]}" if fresh else "—"
     return ovd, spark, top, fresh
 
@@ -684,6 +688,7 @@ footer b{color:var(--navy)}
 .ov-pb{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;margin:1.5px 3px 1.5px 0;white-space:nowrap}
 .ov-pb.m{background:#FBEDEA;color:var(--l1)}.ov-pb.j{background:#EAF2FB;color:var(--l2)}
 .ov-pb.e{background:#F0EDFA;color:var(--l4)}.ov-pb.h{background:#EDF7F1;color:var(--l3)}
+.ov-gv{font-weight:800;color:var(--mut);font-size:13px}
 .ov-dash{color:#B6BEC9}.ov-nil{color:#9AA5B4;font-size:12.5px}
 .ov-more{display:block;width:100%;border:none;background:#F7F9FC;color:var(--mut);font-weight:700;font-size:13px;padding:12px;cursor:pointer}
 .ov-more:hover{color:var(--navy)}
@@ -720,6 +725,7 @@ footer b{color:var(--navy)}
 
 <!-- ===== 화면1: 활용도 모니터링 ===== -->
 <section id="view-ov">
+ <div class="wrap">
   <div class="ov-hero">
     <h2 class="ov-h1">법령 모니터링 총괄현황</h2>
     <p class="ov-lead">매일 새벽 수집된 법령을 날짜별로 한눈에. 수치를 누르면 그날의 법령 목록과 활용도·우대사항 분석까지 이어집니다.</p>
@@ -727,14 +733,15 @@ footer b{color:var(--navy)}
   </div>
   <div class="ov-strip">
     <div class="ov-card"><h3>주간 수집 추이 <span>최근 8주 · 검토 법령 수</span></h3><div class="ov-spark" id="ov-spark"></div></div>
-    <div class="ov-card"><h3>기간 TOP 종목 <span>최근 30일 최다 등장</span></h3><div class="ov-chips" id="ov-top"></div></div>
+    <div class="ov-card"><h3>기간 TOP 10 종목 <span>최근 30일 최다 등장</span></h3><div class="ov-chips" id="ov-top"></div></div>
   </div>
   <p class="ov-today" id="ov-today"></p>
   <div class="ov-tblcard">
-    <table class="ov-tbl"><thead><tr><th>날짜</th><th>상태</th><th>전체 검토</th><th>관계법령</th><th>우대사항</th><th>우대 내역</th></tr></thead><tbody id="ov-tb"></tbody></table>
+    <table class="ov-tbl"><thead><tr><th>날짜</th><th>총 제·개정법령</th><th>전체 검토</th><th>관계법령</th><th>우대사항</th><th>우대 내역</th></tr></thead><tbody id="ov-tb"></tbody></table>
     <button type="button" class="ov-more" id="ov-more">지난 이력 더 보기 ▾</button>
   </div>
   <div class="ov-csv"><button type="button" id="ov-csv">⬇ 표 데이터 CSV 다운로드</button></div>
+ </div>
 </section>
 
 <section id="view-monitor" hidden>
@@ -978,9 +985,8 @@ function ovBadges(b){var h='',k;for(k in PFB){if(b[k])h+='<span class="ov-pb '+P
 function ovCnt(v,fn){return v?'<button type="button" class="ov-cnt" onclick="'+fn+'">'+v+'건 ▸</button>':'<span class="ov-cnt zero">0건</span>';}
 var OV_PAGE=30,ovShown=0;
 function ovRow(x,i){
- if(x.st==='none')return '<tr><td data-l="날짜"><span class="ov-dt">'+x.d+'<small>'+x.w+'요일</small></span></td><td data-l="상태"><span class="ov-st none">— 개정 없음</span></td><td data-l="비고" colspan="4" class="ov-nil">해당 일자 시행 법령 없음</td></tr>';
  return '<tr><td data-l="날짜"><span class="ov-dt">'+x.d+'<small>'+x.w+'요일</small></span></td>'
- +'<td data-l="상태"><span class="ov-st ok">\u2705 완료</span>'+(x.up?'<span class="ov-up" title="활용도 \u0027대폭 증가\u0027 판정 '+x.up+'건 포함">\ud83d\udcc8'+(x.up>1?x.up:'')+'</span>':'')+'</td>'
+ +'<td data-l="총 제·개정법령"><span class="ov-gv">'+x.g+'건</span></td>'
  +'<td data-l="전체 검토">'+ovCnt(x.t,"ovOpen1("+i+",'all')")+'</td>'
  +'<td data-l="관계법령">'+ovCnt(x.r,"ovOpen1("+i+",'rel')")+'</td>'
  +'<td data-l="우대사항">'+ovCnt(x.p,"ovOpen1("+i+",'pref')")+'</td>'
@@ -993,11 +999,12 @@ function ovOpen1(i,mode){var x=OVD[i];if(!x||!x.L)return;
  list.forEach(function(e){var gi=x.L.indexOf(e);var nm=e.i!=null?(MLAWS[e.i]?MLAWS[e.i].law:''):e.n;
   var mt;if(e.i!=null){var d0=MLAWS[e.i];mt=d0?escq(d0.meta||''):'';}
   else{mt='<span class="ov-tag '+(e.rl==='연관높음'?'hi':(e.rl==='단순관련'?'md':'dim'))+'">'+escq(e.rl)+'</span>'+escq(e.mj||'');}
-  h+='<button type="button" class="ov-lrow" onclick="ovDetail('+i+','+gi+')"><span class="nm">'+escq(nm)+(e.pf?' <span class="ov-tag hi">우대</span>':'')+'</span><div class="mt">'+mt+'</div></button>';});
+  h+='<button type="button" class="ov-lrow" onclick="ovDetail('+i+','+gi+')"><span class="nm">'+escq(nm)+(e.pn?' '+pfBadge(e.pn):'')+'</span><div class="mt">'+mt+'</div></button>';});
  if(!list.length)h+='<p class="ov-nil" style="margin-top:14px">해당 구분의 법령이 없습니다.</p>';
  mb.innerHTML=h;openM(modal);}
 function ovDetail(i,gi){var e=OVD[i].L[gi];if(!e)return;var h;
- if(e.i!=null&&MLAWS[e.i]){h=monitorHTML(MLAWS[e.i]);}
+ if(e.i!=null&&MLAWS[e.i]){h=monitorHTML(MLAWS[e.i]);
+  if(e.pn)h=h.replace('</div>','</div><div class="m-pfs" style="margin-top:10px">'+pfBadge(e.pn)+'</div>');}
  else{h='<h2 class="m2-law">'+escq(e.n)+'</h2><div class="m2-art">'+OVD[i].d+' 시행 \u00b7 '+escq(e.rl)+'</div>';
   if(e.mj)h+='<div class="m-sec"><h4>주요 제\u00b7개정 내용</h4><p style="margin:0;font-size:14px;line-height:1.7;">'+escq(e.mj)+'</p></div>';
   h+='<div class="m-sec"><h4>판정</h4><p class="m-none">국가기술자격과 직접 관련이 없는 것으로 분석된 법령입니다.</p></div>';
@@ -1013,12 +1020,12 @@ function ovDetail(i,gi){var e=OVD[i].L[gi];if(!e)return;var h;
    tabs.forEach(function(t){if(t.dataset.view==='radar'){tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');for(var k in views)views[k].hidden=(k!=='radar');}});
    window.scrollTo(0,0);setTimeout(function(){openCert(j);},80);});});}
  var td=document.getElementById('ov-today');if(td&&OVD.length){var x=OVD[0];
-  td.innerHTML=(x.st==='ok')?('오늘의 요약 \u2014 <b>'+x.d+'</b> 검토 <b>'+x.t+'건</b> 중 관계법령 <b>'+x.r+'건</b> \u00b7 우대사항 <b>'+x.p+'건</b> '+ovBadges(x.b||{})):('최근 일자 <b>'+x.d+'</b> \u2014 개정 법령 없음');}
+  td.innerHTML=(x.g||x.t)?('오늘의 요약 \u2014 <b>'+x.d+'</b> 수집 <b>'+x.g+'건</b> \u00b7 검토 <b>'+x.t+'건</b> 중 관계법령 <b>'+x.r+'건</b> \u00b7 우대사항 <b>'+x.p+'건</b> '+ovBadges(x.b||{})):('최근 일자 <b>'+x.d+'</b> \u2014 개정 법령 없음');}
  ovRender();
  var mo=document.getElementById('ov-more');if(mo)mo.addEventListener('click',ovRender);
  var cv=document.getElementById('ov-csv');if(cv)cv.addEventListener('click',function(){
-  var rows=[['날짜','상태','전체 검토','관계법령','우대사항','우대 내역']];
-  OVD.forEach(function(x){rows.push(x.st==='none'?[x.d,'개정 없음','','','','']:[x.d,'완료',x.t,x.r,x.p,Object.keys(x.b||{}).map(function(k){return k+' '+x.b[k];}).join(' \u00b7 ')]);});
+  var rows=[['날짜','총 제·개정법령','전체 검토','관계법령','우대사항','우대 내역']];
+  OVD.forEach(function(x){rows.push([x.d,x.g,x.t,x.r,x.p,Object.keys(x.b||{}).map(function(k){return k+' '+x.b[k];}).join(' \u00b7 ')]);});
   var blob=new Blob(['\ufeff'+rows.map(function(r){return r.join(',');}).join('\n')],{type:'text/csv'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='총괄현황.csv';a.click();});
 })();
