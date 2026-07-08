@@ -89,7 +89,8 @@ def split_certs(raw):
     s = re.sub(r"\(([^)]*)\)", lambda m: "(" + m.group(1).replace(",", "§") + ")", s)
     # 3) 분리 후 복원
     parts = [c.strip().replace("§", ",").replace("㉿", "·") for c in re.split(r"[,/·\n]", s) if c.strip()]
-    return parts
+    # '없음'류 무효 토큰 제거 — 빈칸과 완전 동일 취급 (유령 '없음' 자격증 그룹 방지)
+    return [c for c in parts if c not in ("없음", "-", "–", "해당없음")]
 
 def fmt_eff(s):
     """시행일자 표기: '20220103' → '2022.01.03'. 형식 다르면 원문 그대로."""
@@ -379,7 +380,7 @@ background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15
 .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--navy);background:#EEF3FB;border-radius:999px;padding:6px 14px;margin-bottom:16px}
 .hero h1{font-weight:800;font-size:clamp(22px,3.4vw,32px);line-height:1.42;letter-spacing:-.015em;max-width:740px}
 .hero h1 strong{color:#fff;background:var(--navy);border-radius:10px;padding:1px 12px;font-variant-numeric:tabular-nums}
-.lead{margin-top:14px;color:var(--mut);font-size:14.5px;max-width:640px}
+.lead{margin-top:14px;color:var(--mut);font-size:15.5px;max-width:none;word-break:keep-all}
 .lead::after{content:"";display:block;margin-top:22px;height:4px;max-width:420px;border-radius:99px;
 background:linear-gradient(90deg,var(--l2),var(--l3));position:relative}
 
