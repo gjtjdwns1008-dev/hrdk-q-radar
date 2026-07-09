@@ -322,14 +322,25 @@ def r_build(rows):
         sjb = str(r.get(RCOL["sjb"]) or "").strip() not in ("","비대상","해당없음")
         if not certs:
             # 종목 미상: 우대는 있으나 종목을 특정 못한 법령 → 별도 섹션용으로 수집
-            nocert.append({
+            nc = {
                 "law": law,
                 "p": str(r.get(RCOL["pref"]) or "").strip() or "기타",
                 "a": str(r.get(RCOL["article"]) or "").strip(),
                 "e": fmt_eff(str(r.get(RCOL["eff"]) or "").strip()),
-                "r": str(r.get(RCOL["reason"]) or "").strip(),
                 "u": law_url_name(law),
-            })
+                "t1": tok(r.get(RCOL["t1type"])), "t1r": tok(r.get(RCOL["t1risk"])),
+                "t2": tok(r.get(RCOL["t2"])),
+                "s": 1 if sjb else 0,
+            }
+            _det = str(r.get(RCOL["detail"]) or "").strip()          # 우대사항 상세 분석
+            if _det: nc["d"] = _det
+            _rsn = str(r.get(RCOL["reason"]) or "").strip()          # 검토사유(공개 순화 적용)
+            if _rsn:
+                if re.search(r"미확보|다운로드|추출 실패|자동검증|파일 전용", _rsn):
+                    nc["r"] = "세부 자격 기준(별표) 자료를 보완·검토 중입니다."
+                else:
+                    nc["r"] = _rsn
+            nocert.append(nc)
             continue
         e = {"law":law, "a":str(r.get(RCOL["article"]) or "").strip(),
              "p":str(r.get(RCOL["pref"]) or "").strip() or "기타",
@@ -640,6 +651,11 @@ background:linear-gradient(90deg,var(--l1) 0 20%,var(--l2) 20% 40%,var(--l3) 40%
 .nc-item{border:1.5px solid var(--line);border-radius:14px;background:#fff;padding:13px 15px;margin-top:10px}
 .nc-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .nc-law{font-weight:800;font-size:14.5px}
+.nc-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.nc-tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEF3FB;color:var(--navy);border:1.5px solid #D7E3F2}
+.nc-tag.warn{background:#FBEDEA;color:var(--l1);border-color:#F3D5CE}
+.nc-det{margin:8px 0;padding:10px 12px;background:#F7FAFC;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:12.5px;line-height:1.65;color:#33404F}
+.nc-det b{color:var(--navy);font-size:11.5px}
 .nc-r{font-size:12px;color:var(--mut);margin-top:5px}
 .nc-art{font-size:12.5px;color:#3C475A;margin-top:4px}
 .nc-desc{font-size:13px;color:var(--mut);margin:8px 0 2px;line-height:1.8}
@@ -919,8 +935,16 @@ function openNocert(){
     var h='<div class="nc-item"><div class="nc-h">'+pfBadge(x.p||'기타')+'<span class="nc-law">'+escq(x.law)+'</span>';
     if(x.e)h+='<span class="law-eff">시행 '+escq(x.e)+'</span>';
     h+='</div>';
-    if(x.a)h+='<div class="nc-art">'+escq(x.a)+'</div>';
-    if(x.r)h+='<div class="nc-r">📌 '+escq(x.r)+'</div>';
+    // 분류 배지 3종 — 코드를 한글명으로 변환(T1TYPE/T1RISK/T2 매핑, 관련법령 탭과 동일)
+    var tags='';
+    if(x.t1){var v=T1TYPE[x.t1];tags+='<span class="nc-tag">'+escq(x.t1+(v?' ('+v[0]+')':''))+'</span>';}
+    if(x.t1r){var v=T1RISK[x.t1r];tags+='<span class="nc-tag">'+escq(x.t1r+(v?' ('+v[0]+')':''))+'</span>';}
+    if(x.t2){var v=T2[x.t2];tags+='<span class="nc-tag">'+escq(x.t2+(v?' ('+v[0]+')':''))+'</span>';}
+    if(x.s)tags+='<span class="nc-tag warn">⚠ 중대재해처벌법</span>';
+    if(tags)h+='<div class="nc-tags">'+tags+'</div>';
+    if(x.a)h+='<div class="nc-art">📖 '+escq(x.a)+'</div>';
+    if(x.d)h+='<div class="nc-det"><b>우대사항 분석</b><br>'+escq(x.d)+'</div>';
+    if(x.r)h+='<div class="nc-r">📌 종목 미특정 사유: '+escq(x.r)+'</div>';
     h+='<a class="nc-ext" href="'+escq(x.u)+'" target="_blank" rel="noopener">법제처에서 원문 확인 →</a></div>';
     return h;
   }).join('');
