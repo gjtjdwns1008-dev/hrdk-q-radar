@@ -45,6 +45,7 @@ jobs:
 
       - name: Q-RADAR 실행 (수동)
         env:
+          PYTHONUNBUFFERED: "1"   # 로그 실시간 출력(버퍼링 방지) — 로직 무관
           LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
