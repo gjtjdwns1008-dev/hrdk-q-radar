@@ -359,32 +359,56 @@ def make_details(selected):
         )
         raw = _ask_with_search(prompt, temperature=0.2)
         data = _parse_detail_json(raw)
+        # 파싱 실패(핵심 항목 공백) 시 재시도 — 타임아웃 아님, 재질의만.
+        # 웹검색 응답이 JSON을 오염시키는 경우가 있어 2차는 검색 없이, 3차는 온도를 바꿔 시도.
+        if not (data.get("bg") or data.get("main")):
+            print("⚠️ 상세 JSON 해석 실패 → 재시도(검색 미사용)", end=" ", flush=True)
+            data = _parse_detail_json(_ask(prompt, temperature=0.2))
+        if not (data.get("bg") or data.get("main")):
+            print("→ 재시도(응답 다양화)", end=" ", flush=True)
+            data = _parse_detail_json(_ask(prompt, temperature=0.5))
         merged = dict(r)
         merged["impact_3lines"] = data.get("impact_3lines", [])
         merged["bg"] = data.get("bg", "")
         merged["main"] = data.get("main", "")
         merged["effect"] = data.get("effect", "")
         results.append(merged)
-        print("✅")
+        print("✅" if (merged.get("bg") or merged.get("main")) else "⚠️ 상세 누락 — 프레임만 기록됨")
     return results
 
 
 def _parse_detail_json(raw):
-    """AI 응답에서 JSON 객체 추출 (```json 펜스, 줄바꿈, 웹검색 인용표시 정리)."""
+    """AI 응답에서 JSON 객체 추출 (펜스·줄바꿈·인용 정리 + 균형 중괄호·콤마 보정).
+    웹검색 결합 응답은 JSON 앞뒤에 인용·잔여 텍스트가 붙기 쉬워, 탐욕적 {.*} 만으로는
+    파싱이 깨질 수 있다 → ①첫 '{'부터 균형 잡힌 블록 ②탐욕 매칭 순으로 시도하고,
+    각 후보에 트레일링 콤마 보정까지 적용한다."""
     if not raw:
         return {}
     s = raw.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
     s = s.replace("\n", " ").replace("\r", " ")
-    match = re.search(r"\{.*\}", s, re.DOTALL)
-    if not match:
-        return {}
-    try:
-        data = json.loads(match.group(0))
-    except Exception:
-        return {}
-    # 웹검색 시 붙을 수 있는 인용 표시([1], [2] 등) 제거
-    data = {k: _clean_citations(v) for k, v in data.items()}
-    return data
+    cands = []
+    i = s.find("{")
+    if i >= 0:                     # 후보1: 균형 중괄호 블록 (뒤쪽 잔여 텍스트에 강함)
+        depth = 0
+        for j in range(i, len(s)):
+            if s[j] == "{":
+                depth += 1
+            elif s[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    cands.append(s[i:j + 1])
+                    break
+    m = re.search(r"\{.*\}", s, re.DOTALL)
+    if m and (not cands or m.group(0) != cands[0]):   # 후보2: 기존 탐욕 매칭
+        cands.append(m.group(0))
+    for c in cands:
+        for fix in (c, re.sub(r",\s*([}\]])", r"\1", c)):   # 트레일링 콤마 보정
+            try:
+                data = json.loads(fix)
+                return {k: _clean_citations(v) for k, v in data.items()}
+            except Exception:
+                continue
+    return {}
 
 
 def _clean_citations(value):
