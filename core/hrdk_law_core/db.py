@@ -294,7 +294,7 @@ class KnowledgeBase:
             conditions.append("law_name LIKE ?")
             params.append(f"%{law_name}%")
         if preference_type:
-            conditions.append("track2_code LIKE ?")
+            conditions.append("preference_type LIKE ?")
             params.append(f"%{preference_type}%")
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
