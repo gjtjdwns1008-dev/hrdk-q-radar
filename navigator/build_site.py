@@ -683,7 +683,8 @@ footer b{color:var(--navy)}
 .ov-card{background:#fff;border:2px solid var(--line);border-radius:16px;padding:16px 18px}
 .ov-card h3{font-size:13px;color:var(--navy);font-weight:800;margin-bottom:10px}
 .ov-card h3 span{font-weight:500;color:var(--mut);font-size:11.5px;margin-left:6px}
-.ov-spark{display:flex;align-items:flex-end;gap:8px;height:78px;padding-top:6px}
+.ov-card.fill{display:flex;flex-direction:column}
+.ov-spark{display:flex;align-items:flex-end;gap:8px;flex:1 1 auto;min-height:78px;padding-top:6px;margin-bottom:19px}
 .ov-spark .b{flex:1;background:linear-gradient(180deg,#7FA6D9,#3E6AA8);border-radius:6px 6px 3px 3px;position:relative;min-width:14px}
 .ov-spark .b:hover{filter:brightness(1.12)}
 .ov-spark .b i{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-style:normal;font-size:10.5px;color:var(--mut);font-weight:700}
@@ -757,7 +758,7 @@ footer b{color:var(--navy)}
     <span class="ov-fresh">🛰️ 매일 새벽 자동 수집 · 최근 수집 성공 <b>@@OVFRESH@@</b></span>
   </div>
   <div class="ov-strip">
-    <div class="ov-card"><h3>주간 수집 추이 <span>최근 8주 · 검토 법령 수</span></h3><div class="ov-spark" id="ov-spark"></div></div>
+    <div class="ov-card fill"><h3>주간 수집 추이 <span>최근 8주 · 검토 법령 수</span></h3><div class="ov-spark" id="ov-spark"></div></div>
     <div class="ov-card"><h3>기간 TOP 10 종목 <span>최근 30일 · 관계법령 등장 횟수</span></h3><div class="ov-chips" id="ov-top"></div></div>
   </div>
   <p class="ov-today" id="ov-today"></p>
@@ -1052,7 +1053,7 @@ function ovTopOpen(k){var t=OVTOP[k];if(!t)return;var idxs=t[2]||[];
 function ovLawByIdx(i){var d=MLAWS[i];if(!d)return;mb2.innerHTML=monitorHTML(d);openM(modal2);}
 (function(){
  var sp=document.getElementById('ov-spark');if(sp&&OVSPARK.length){var mx=1;OVSPARK.forEach(function(w){if(w[1]>mx)mx=w[1];});
-  sp.innerHTML=OVSPARK.map(function(w){return '<div class="b" style="height:'+(8+Math.round(w[1]/mx*66))+'px" title="'+w[0]+' '+w[1]+'건"><i>'+w[1]+'</i><u>'+w[0]+'</u></div>';}).join('');}
+  sp.innerHTML=OVSPARK.map(function(w){return '<div class="b" style="height:calc((100% - 24px)*'+(w[1]/mx).toFixed(3)+' + 8px)" title="'+w[0]+' '+w[1]+'건"><i>'+w[1]+'</i><u>'+w[0]+'</u></div>';}).join('');}
  var tp=document.getElementById('ov-top');
  if(tp){tp.innerHTML=OVTOP.length?OVTOP.map(function(t,k){return '<button type="button" class="ov-chip" data-k="'+k+'" title="누르면 해당 법령 목록이 열립니다">'+escq(t[0])+'<small>\u00d7'+t[1]+'</small></button>';}).join(''):'<span class="ov-nil">최근 30일 데이터 없음</span>';
   [].slice.call(tp.querySelectorAll('.ov-chip')).forEach(function(c){c.addEventListener('click',function(){ovTopOpen(+this.dataset.k);});});}
