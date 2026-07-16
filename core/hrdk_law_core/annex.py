@@ -251,7 +251,10 @@ def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
         return "", ""
 
     cands.sort(key=lambda x: 0 if PRIORITY.search(x[1] or "") else 1)
+    print(f"    📎 별표·서식 후보 {len(cands)}개 — 다운로드 시작 (진행 로그: 파일 단위)")
     got, miss, used, tried, srcs = [], [], 0, 0, set()
+    import time as _pt
+    _t_law = _pt.monotonic()
     for url, title, src in cands:
         if MAX_FILES and tried >= MAX_FILES:
             miss.append((title, f"파일 수 밸브({MAX_FILES}) — ANNEX_MAX_FILES로 확장 가능"))
@@ -260,6 +263,8 @@ def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
             miss.append((title, f"분량 안전밸브({TOTAL_CHAR:,}자) — ANNEX_TOTAL_CHARS로 확장 가능"))
             continue
         tried += 1
+        _t_f = _pt.monotonic()
+        print(f"      ⬇ [{tried}/{len(cands)}] {src} {str(title or '')[:26]}", end="", flush=True)
         txt = ""
         for _attempt in (1, 2):                    # ★재시도 1회
             try:
@@ -273,8 +278,11 @@ def build_annex_sections(detail_root, http_get, law_name=None, api_key=None,
             used += len(txt)
             got.append((title, txt))               # ★무절단
             srcs.add(src)
+            print(f" ✓ {len(txt):,}자 ({_pt.monotonic()-_t_f:.1f}s)")
         else:
             miss.append((title, "다운로드·추출 실패(재시도 포함)"))
+            print(f" ✗ 실패 ({_pt.monotonic()-_t_f:.1f}s)")
+    print(f"    📎 별표 수집 종료 — 성공 {len(got)} · 실패/제외 {len(miss)} · {used:,}자 · {_pt.monotonic()-_t_law:.0f}s")
     if used >= TOTAL_CHAR:
         print(f"    ⚠️ 별표 분량 안전밸브 발동({used:,}자) — 제외분은 상태 섹션에 표기")
 

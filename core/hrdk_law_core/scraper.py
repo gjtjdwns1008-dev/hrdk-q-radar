@@ -234,11 +234,12 @@ def get_base_laws(api_key: str, target_date: str) -> list | None:
                         #     (재시도 1회 → 그래도 초과면 그 별표만 '미확보'로 정직 신고, 배치는 계속)
                         #   ※ 분석 타임아웃 아님 — 법령은 절대 조용히 버려지지 않음(검토필요로 남음).
                         _AX_BUDGET = int(os.environ.get("ANNEX_FETCH_BUDGET", "90"))
-                        def _ax_get(u, _b=_AX_BUDGET):
+                        _ax_sess = requests.Session()          # ★연결·SSL 재사용(파일마다 새 핸드셰이크 방지)
+                        _ax_sess.headers.update({"User-Agent": "Mozilla/5.0"})
+                        def _ax_get(u, _b=_AX_BUDGET, _s=_ax_sess):
                             import time as _t
                             _t0 = _t.monotonic()
-                            _r = requests.get(u, timeout=30, stream=True,
-                                              headers={"User-Agent": "Mozilla/5.0"})
+                            _r = _s.get(u, timeout=30, stream=True)
                             _buf = bytearray()
                             for _part in _r.iter_content(chunk_size=65536):
                                 if _part:
