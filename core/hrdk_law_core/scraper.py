@@ -228,7 +228,25 @@ def get_base_laws(api_key: str, target_date: str) -> list | None:
                     # ★재발방지(2026-07-06): 파일 전용 별표 심층 수집 + 상태 사실 표기
                     try:
                         from .annex import build_annex_sections
-                        _ax_get = lambda u: requests.get(u, timeout=30, headers={"User-Agent": "Mozilla/5.0"}).content
+                        # ★타르핏 방어(2026-07-16): 해외 IP에 '찔끔 응답'을 주는 서버는
+                        #   timeout=30(바이트 간격 기준)을 영원히 안 건드려 수집이 무한 대기함.
+                        #   → 파일당 총 소요 예산(벽시계) 초과 시 예외 발생 = annex 안전핀에 합류
+                        #     (재시도 1회 → 그래도 초과면 그 별표만 '미확보'로 정직 신고, 배치는 계속)
+                        #   ※ 분석 타임아웃 아님 — 법령은 절대 조용히 버려지지 않음(검토필요로 남음).
+                        _AX_BUDGET = int(os.environ.get("ANNEX_FETCH_BUDGET", "90"))
+                        def _ax_get(u, _b=_AX_BUDGET):
+                            import time as _t
+                            _t0 = _t.monotonic()
+                            _r = requests.get(u, timeout=30, stream=True,
+                                              headers={"User-Agent": "Mozilla/5.0"})
+                            _buf = bytearray()
+                            for _part in _r.iter_content(chunk_size=65536):
+                                if _part:
+                                    _buf.extend(_part)
+                                if _t.monotonic() - _t0 > _b:
+                                    raise TimeoutError(
+                                        f"별표 다운로드 예산 초과({_b}s·{len(_buf):,}B 수신)")
+                            return bytes(_buf)
                         ax_text, ax_status = build_annex_sections(detail_root, _ax_get, law_name=law_name, api_key=api_key)
                         if ax_text:
                             full_text += f"\n\n{ax_text}"
