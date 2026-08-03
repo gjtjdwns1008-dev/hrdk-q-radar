@@ -554,8 +554,8 @@ background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15
 .seal-stamp::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--go);animation:blink 1.8s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.seal-stamp::before{animation:none}}
-.tabs{display:flex;gap:10px;padding-bottom:16px}
-.tab{appearance:none;border:2px solid var(--line);background:#fff;border-radius:999px;padding:13px 26px;font-size:15.5px;font-weight:800;color:var(--mut);display:inline-flex;align-items:center;gap:9px;cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
+.tabs{display:flex;gap:10px;row-gap:10px;flex-wrap:wrap;padding-bottom:16px}
+.tab{appearance:none;border:2px solid var(--line);background:#fff;border-radius:999px;padding:12px 19px;font-size:14.5px;white-space:nowrap;flex:0 0 auto;font-weight:800;color:var(--mut);display:inline-flex;align-items:center;gap:9px;cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
 .tab::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--line);flex:none;transition:background .15s,box-shadow .15s}
 .tab:hover{border-color:var(--navy);color:var(--navy)}
 .tab.active{background:var(--navy);border-color:var(--navy);color:#fff;box-shadow:0 8px 20px rgba(27,42,74,.30)}
