@@ -700,6 +700,15 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
 
     # ── ① 분류체계 안내 — Track 1·2 읽는 법 (표 정리, brain 분석 기준 정의) ──
     p = doc.add_paragraph(); _run(p, "■ 분류체계 안내 — Track 1·2 읽는 법", size=12, color=BLUE, bold=True)
+    # ★2026-08-03: 관계부서 독자용 도입 설명(네비게이터 안내문과 동일 취지)
+    p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.2)
+    _run(p, "본 브리핑의 우대 분석은 세 가지 눈으로 읽습니다. ① 우대분류(5종)는 법령이 "
+            "자격 취득자에게 부여하는 실익의 성격 — 의무고용(자격자를 반드시 선임·배치), "
+            "직무권한부여(자격자만 수행 가능한 직무), 인사우대(채용·보수·승진 가점), "
+            "시험면제, 기타 — 를 구분합니다. ② Track 1(정책 관점)은 법령이 자격을 다루는 "
+            "방식(취급유형 A~E)과 제도 변화의 파급 정도(위험도)를, ③ Track 2(구직자 관점)는 "
+            "취득자에게 생기는 노동시장 실익(효용코드 Ⅰ 직업창출·Ⅱ 취업관문·Ⅲ 부가우대)을 "
+            "나타냅니다. 아래 표는 각 코드의 정의입니다.", size=10, color=DARKGRAY)
 
     def _guide_table(title, rows, note=None):
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
