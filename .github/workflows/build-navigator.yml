@@ -12,6 +12,7 @@ name: Build & Deploy navigator (Q-RADAR)
 
 on:
   schedule:
+    - cron: "0 21 * * *"    # KST 06:00 ★2026-08-03 추가 — 새벽 분석(00:20~ 격자) 종료 후 첫 공개 반영
     - cron: "30 23 * * *"   # KST 08:30
     - cron: "0 5 * * *"     # KST 14:00
     - cron: "0 11 * * *"    # KST 20:00
