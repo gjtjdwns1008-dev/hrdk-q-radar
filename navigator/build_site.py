@@ -165,7 +165,8 @@ OV_DAYS = int(os.environ.get("OV_DAYS", "120"))
 _REAL_PREF = {"의무고용", "직무권한부여", "인사우대", "시험면제"}
 
 def load_overview():
-    """총괄현황표 골격(성공 일자 목록, 최신순). 실패행은 비노출 원칙에 따라 제외.
+    """총괄현황표 골격(성공 건수 dict, 실패일 dict). 실패일은 숨기지 않고
+    공개 고정 문구로 표기(★2026-08-03 정직 표기 전환).
     시트 접근 실패 시 빈 dict → 대장 날짜만으로 표를 구성(무중단)."""
     try:
         lc = os.environ.get("LOCAL_OV_CSV", "").strip()
@@ -178,20 +179,21 @@ def load_overview():
                 os.environ.get("QRADAR_OV_WS", "총괄현황표")).get_all_records()
     except Exception as _ov_e:
         print(f"  ⚠️ 총괄현황표 읽기 실패 — 대장 날짜만으로 구성(무중단): {str(_ov_e)[:60]}")
-        return {}   # ★버그픽스: []를 반환하면 build_ov의 sched.get()에서 전체 빌드가 죽음
-    out = {}
+        return {}, {}   # ★버그픽스: []를 반환하면 build_ov의 sched.get()에서 전체 빌드가 죽음
+    out, fails = {}, {}
     for r in rows:
         d = digits(r.get("시행일자"))
         if len(d) != 8:
             continue
         st = str(r.get("모니터링 상태") or "")
         if any(k in st for k in ("❌", "🔴", "실패")):
+            fails[d] = True   # ★2026-08-03: 실패일 수집(공개 문구 표기용)
             continue
         try:
             out[d] = int(digits(r.get("총 검토건수")) or 0)
         except Exception:
             out[d] = 0
-    return out
+    return out, fails
 
 
 def build_ov(midx, rc_idx):
@@ -201,12 +203,18 @@ def build_ov(midx, rc_idx):
         d = digits(r.get("시행일자"))
         if len(d) == 8:
             by[d].append(r)
-    sched = load_overview()
-    dates = sorted(set(by) | set(sched), reverse=True)[:OV_DAYS]
+    sched, fails = load_overview()
+    dates = sorted(set(by) | set(sched) | set(fails), reverse=True)[:OV_DAYS]
     WD = "월화수목금토일"
     ovd = []
     for d in dates:
         rl = by.get(d, [])
+        # ★2026-08-03: 완전 실패일(성공 행·대장 행 모두 없음) → 공개 문구 행으로 표기
+        if d in fails and d not in sched and not rl:
+            dt = datetime.date(int(d[:4]), int(d[4:6]), int(d[6:8]))
+            ovd.append({"d": f"{d[:4]}-{d[4:6]}-{d[6:8]}", "w": WD[dt.weekday()],
+                        "g": 0, "t": 0, "r": 0, "p": 0, "b": {}, "L": [], "f": 1})
+            continue
         rel = [r for r in rl if str(r.get("연관도") or "").strip() in ("연관높음", "단순관련")]
         pref = [r for r in rl if str(r.get("우대분류") or "").strip() in _REAL_PREF
                 or str(r.get("연관도") or "").strip() == "우대"]
@@ -349,6 +357,7 @@ def r_build(rows):
              "s":1 if sjb else 0}
         eff = str(r.get(RCOL["eff"]) or "").strip()       # 시행일자(제·개정일) 표시용
         if eff: e["e"] = fmt_eff(eff)
+        e["_k"] = digits(eff)                              # ★내부 정렬키(최신 판별용, 출력 전 제거)
         det = str(r.get(RCOL["detail"]) or "").strip()    # 관련법령 탭의 상세 분석 결과(직접 보유)
         if det: e["d"] = det
         rsn = str(r.get(RCOL["reason"]) or "").strip()    # 검토사유
@@ -366,6 +375,33 @@ def r_build(rows):
     items = sorted(cert_map.items(), key=lambda kv: len({entries[ei]["law"] for ei in kv[1]}), reverse=True)[:R_MAX]
     certs_out = []
     for cert, idxs in items:
+        # ★법령명 병합(2026-08-03, v3.9.3): 같은 법령의 복수 제·개정 행(MST 상이)은
+        #   대국민 팝업에 1행으로 '병합' 노출 — 근거조문·링크는 전 행 합집합(무손실),
+        #   시행일자·상세분석·분류는 최신 행 기준. 택1이 아닌 병합인 이유: 분석 원본이
+        #   '개정 조문 중심'이라 행 간 근거가 보완 관계일 수 있음(별표는 매회 전체 포함).
+        #   원본 로그·집계 law_count 불변. 대장(Phase 2)도 동일 원칙 적용 예정.
+        groups = {}
+        for ei in idxs:
+            groups.setdefault(entries[ei]["law"], []).append(ei)
+        merged_idxs = []
+        for lw, eis in groups.items():
+            if len(eis) == 1:
+                merged_idxs.append(eis[0]); continue
+            eis.sort(key=lambda ei: (entries[ei].get("_k",""), ei))   # 과거→최신
+            m = dict(entries[eis[-1]])                                 # 최신 행 사본이 대표
+            seen_a, arts = set(), []
+            for ei in eis:
+                for t in [x.strip() for x in re.split(r"[,·]", entries[ei].get("a","")) if x.strip()]:
+                    if t not in seen_a: seen_a.add(t); arts.append(t)
+            if arts: m["a"] = ", ".join(arts)
+            seen_l, lks = set(), []
+            for ei in eis:
+                for l in (entries[ei].get("lk") or []):
+                    k = l.get("t") or l.get("u")
+                    if k and k not in seen_l: seen_l.add(k); lks.append(l)
+            if lks: m["lk"] = lks
+            mi = len(entries); entries.append(m); merged_idxs.append(mi)
+        idxs = merged_idxs
         prefs = [p for p,_ in Counter(entries[ei]["p"] for ei in idxs).most_common()]
         idxs_sorted = sorted(idxs, key=lambda ei:(r_pref_idx(entries[ei]["p"]), entries[ei]["law"]))
         certs_out.append({"cert":cert, "prefs":prefs,
@@ -376,6 +412,7 @@ def r_build(rows):
     for x in sorted(nocert, key=lambda z: z["law"]):
         if x["law"] in seen_nc: continue
         seen_nc.add(x["law"]); nocert_uniq.append(x)
+    for e in entries: e.pop("_k", None)                 # ★내부 정렬키 제거
     return certs_out, entries, len(cert_map), nocert_uniq
 
 def r_card(d, i):
@@ -679,6 +716,8 @@ footer b{color:var(--navy)}
 #view-ov .ov-hero{margin-top:6px}
 .ov-h1{font-weight:800;font-size:clamp(20px,2.8vw,26px);letter-spacing:-.015em;color:var(--ink)}
 .ov-lead{margin-top:8px;color:var(--mut);font-size:15px;word-break:keep-all}
+.ov-failrow td{background:#FBF6F1}
+.ov-failmsg{color:#8a5a44;font-size:13.5px;font-weight:600}
 .ov-fresh{display:inline-flex;align-items:center;gap:7px;margin-top:12px;background:#EDF7F1;color:#0F6E56;border:1.5px solid #CBE7D8;font-weight:700;font-size:12.5px;padding:6px 13px;border-radius:999px}
 .ov-strip{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin-top:20px}
 .ov-card{background:#fff;border:2px solid var(--line);border-radius:16px;padding:16px 18px}
@@ -1020,6 +1059,7 @@ function ovBadges(b){var h='',k;for(k in PFB){if(b[k])h+='<span class="ov-pb '+P
 function ovCnt(v,fn){return v?'<button type="button" class="ov-cnt" onclick="'+fn+'">'+v+'건 ▸</button>':'<span class="ov-cnt zero">0건</span>';}
 var OV_PAGE=30,ovShown=0;
 function ovRow(x,i){
+ if(x.f)return '<tr class="ov-failrow"><td data-l="날짜"><span class="ov-dt">'+x.d+'<small>'+x.w+'요일</small></span></td>'+'<td colspan="5" class="ov-failmsg">현재 법제처 접속이 불가하여 당일 법령 제·개정사항 분석에 실패하였습니다.</td></tr>';
  return '<tr><td data-l="날짜"><span class="ov-dt">'+x.d+'<small>'+x.w+'요일</small></span></td>'
  +'<td data-l="총 제·개정법령"><span class="ov-gv'+(x.g?'':' zero')+'">'+x.g+'건</span></td>'
  +'<td data-l="총 검토 법령">'+ovCnt(x.t,"ovOpen1("+i+",'all')")+'</td>'
@@ -1027,7 +1067,7 @@ function ovRow(x,i){
  +'<td data-l="우대법령">'+ovCnt(x.p,"ovOpen1("+i+",'pref')")+'</td>'
  +'<td data-l="우대 내역">'+ovBadges(x.b||{})+'</td></tr>';}
 function ovRender(){var tb=document.getElementById('ov-tb');if(!tb)return;ovShown=Math.min(ovShown+OV_PAGE,OVD.length);var h='';for(var i=0;i<ovShown;i++)h+=ovRow(OVD[i],i);tb.innerHTML=h;var mo=document.getElementById('ov-more');if(mo)mo.style.display=ovShown<OVD.length?'block':'none';}
-function ovOpen1(i,mode){var x=OVD[i];if(!x||!x.L)return;
+function ovOpen1(i,mode){var x=OVD[i];if(!x||!x.L||x.f)return;
  var list=x.L.filter(function(e){if(mode==='pref')return e.pf;if(mode==='rel')return e.i!=null;return true;});
  var T={all:'총 검토 법령',rel:'관계법령',pref:'우대법령'}[mode];
  var h='<h2 class="m-title">'+x.d+' \u00b7 '+T+' '+list.length+'건</h2><div class="m-meta">법령을 누르면 상세 분석이 열립니다</div>';
