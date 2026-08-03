@@ -1182,8 +1182,17 @@ def main():
 
     # 2) AI: 선별 → 총평 → 상세
     big_laws = [r for r in high if r.get("활용도_구분", "") in ("대폭 증가", "대폭 감소")]
+    # ★2026-08-03 폴백 사다리: '대폭' 변동이 없는 달은 제1부 심층이 0건으로 비는
+    #   설계 공백 → 소폭 증감 중 파급(관련 종목 수) 큰 순으로 핵심을 선별해 항상 채움.
+    _fb_note = ""
+    if not big_laws:
+        big_laws = [r for r in high if r.get("활용도_구분", "") in ("소폭 증가", "소폭 감소")]
+        _fb_note = ("이달은 자격 활용도가 '대폭' 변동한 법령이 없어, 소폭 변동 법령 중 "
+                    "관련 종목 파급이 큰 사례를 핵심 이슈로 선별하였습니다. ")
     selected = select_top_laws(big_laws, TOP_N)
     foreword = make_foreword(selected, TARGET_MONTH)
+    if _fb_note:
+        foreword = _fb_note + (foreword or "")
     issues = make_details(selected)
     pref_foreword = make_pref_foreword(preferred, TARGET_MONTH)
 
