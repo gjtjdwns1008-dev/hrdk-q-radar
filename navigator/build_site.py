@@ -465,8 +465,12 @@ def build():
         nocert_banner = ""
         nocert_json = "[]"
 
-    mins_opts = "".join(f'<option value="{esc(m)}">{esc(m)}</option>'
-                        for m in sorted({d.get("mn","") for d in mdata if d.get("mn")}))
+    _mset = set()
+    for d in mdata:
+        for m in re.split(r"[,·/]", d.get("mn","") or ""):
+            m = m.strip()
+            if m: _mset.add(m)
+    mins_opts = "".join(f'<option value="{esc(m)}">{esc(m)}</option>' for m in sorted(_mset))
     brief_src = os.environ.get("BRIEF_PDF", "briefing_public/latest.pdf")
     if os.path.exists(brief_src):
         os.makedirs(os.path.join(OUT_DIR, "briefing"), exist_ok=True)
@@ -989,12 +993,13 @@ mfrom.value="@@M_DEF_FROM@@"; mto.value="@@M_DEF_TO@@";
 MLAWS.forEach(function(o){var cs=(o.certs||[]).join(' ');
   o._law=(o.law||'').toLowerCase(); o._cert=cs.toLowerCase();
   o._det=((o.summary_use||'')+' '+(o.summary_main||'')+' '+(o.meta||'')).toLowerCase();
-  o._all=((o.law||'')+' '+(o.meta||'')+' '+cs+' '+(o.summary_use||'')+' '+(o.summary_main||'')).toLowerCase();});
+  o._all=((o.law||'')+' '+(o.meta||'')+' '+cs+' '+(o.summary_use||'')+' '+(o.summary_main||'')).toLowerCase();
+  o._mns=(o.mn||'').split(/[,·\/]/).map(function(x){return x.trim();}).filter(Boolean);});
 function hay(c){var o=MLAWS[+c.dataset.i];var s=scope.value;return s==='law'?o._law:s==='cert'?o._cert:s==='detail'?o._det:o._all;}
 function fmtM(m){return m?m.slice(0,4)+'.'+m.slice(4,6):'';}
 function filterM(){var term=(qm.value||'').trim().toLowerCase();var a=mfrom.value,b=mto.value;if(a>b){var t=a;a=b;b=t;}var s=0;
   var mv=minf?minf.value:'';
-  mcards.forEach(function(c){var o=MLAWS[+c.dataset.i];var on=(c.dataset.month>=a&&c.dataset.month<=b)&&(!mv||o.mn===mv)&&(!term||(hay(c)||'').indexOf(term)!==-1);c.style.display=on?'':'none';if(on)s++;});
+  mcards.forEach(function(c){var o=MLAWS[+c.dataset.i];var on=(c.dataset.month>=a&&c.dataset.month<=b)&&(!mv||(o._mns||[]).indexOf(mv)!==-1)&&(!term||(hay(c)||'').indexOf(term)!==-1);c.style.display=on?'':'none';if(on)s++;});
   document.getElementById('cnt').textContent=s;document.getElementById('heroN').textContent=s;
   document.getElementById('heroPeriod').textContent=fmtM(a)+' ~ '+fmtM(b)+' 기간';nresM.style.display=s?'none':'block';}
 [qm,scope,mfrom,mto,minf].forEach(function(el){el.addEventListener('input',filterM);el.addEventListener('change',filterM);});
