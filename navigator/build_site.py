@@ -15,7 +15,7 @@ build_site.py — 자격증 법령 네비게이터 (통합 1파일 빌더 · v2:
   로컬 테스트 → LOCAL_XLSX, LOCAL_SHEET
   옵션: M_MAX(기본 5000), R_MAX(기본 9999), OUT_DIR(기본 dist)
 """
-import os, re, json, html, hashlib, datetime
+import os, re, json, html, hashlib, datetime, shutil
 from collections import defaultdict, Counter
 from urllib.parse import quote
 
@@ -269,7 +269,10 @@ def build_ov(midx, rc_idx):
     top = [[c, n, t_idx.get(c, [])] for c, n in tcnt.most_common(10)]
     fresh = max(sched) if sched else (dates[0] if dates else "")
     fresh = f"{fresh[:4]}-{fresh[4:6]}-{fresh[6:8]}" if fresh else "—"
-    return ovd, spark, top, fresh
+    stats = {"tot": sum(len(v) for v in by.values()),
+             "pref": sum(1 for v in by.values() for r in v
+                         if str(r.get("우대분류") or "").strip() in _REAL_PREF)}
+    return ovd, spark, top, fresh, stats
 
 # ───────── monitor 데이터/카드 ─────────
 def m_fields(row):
@@ -287,14 +290,14 @@ def m_fields(row):
     else:
         base_url = law_url_name(row.get(MCOL["law"]))
     return {"law":str(row.get(MCOL["law"]) or "").strip(), "month":digits(row.get(MCOL["date"]))[:6],
-            "meta":" · ".join(x for x in [mn,dt,kd] if x), "certs":certs,
+            "meta":" · ".join(x for x in [mn,dt,kd] if x), "mn":mn, "certs":certs,
             "summary_main":str(row.get(MCOL["summary2"]) or "").strip(),
             "summary_use":str(row.get(MCOL["summary1"]) or "").strip(),
             "articles":arts, "artlinks":art_links, "url":base_url}
 
 def m_card(d, i):
     shown = d["certs"][:4]; extra = len(d["certs"]) - len(shown)
-    chips = "".join(f'<span class="chip">{esc(c)}</span>' for c in shown) + (f'<span class="chip chip-more">+{extra}</span>' if extra>0 else "")
+    chips = "".join(f'<span class="chip chip-go" data-c="{esc(c)}" title="이 종목으로 검색">{esc(c)}</span>' for c in shown) + (f'<span class="chip chip-more">+{extra}</span>' if extra>0 else "")
     summ = esc(d["summary_use"] or d["summary_main"] or "요약 준비 중입니다.")
     # meta("부처 · 날짜 · 유형")에서 날짜를 대장 왼쪽 열로 분리
     parts = [p.strip() for p in str(d["meta"] or "").split("·")]
@@ -446,7 +449,7 @@ def build():
     rrows = load_radar()
     rcerts, rentries, r_total, nocert = r_build(rrows)
     rc_idx = {d["cert"]: i for i, d in enumerate(rcerts)}
-    ovd, ovspark, ovtop, ovfresh = build_ov(midx, rc_idx)
+    ovd, ovspark, ovtop, ovfresh, ovstat = build_ov(midx, rc_idx)
     r_cards = "\n".join(r_card(d,i) for i,d in enumerate(rcerts)) or '<p class="empty">자료가 없습니다.</p>'
     # 종목 미상 우대법령 섹션 (자격증 그리드 맨 아래 접이식)
     if nocert:
@@ -461,6 +464,19 @@ def build():
     else:
         nocert_banner = ""
         nocert_json = "[]"
+
+    mins_opts = "".join(f'<option value="{esc(m)}">{esc(m)}</option>'
+                        for m in sorted({d.get("mn","") for d in mdata if d.get("mn")}))
+    brief_src = os.environ.get("BRIEF_PDF", "briefing_public/latest.pdf")
+    if os.path.exists(brief_src):
+        os.makedirs(os.path.join(OUT_DIR, "briefing"), exist_ok=True)
+        shutil.copy(brief_src, os.path.join(OUT_DIR, "briefing", "latest.pdf"))
+        brief_html = ('<object class="brief-pdf" data="briefing/latest.pdf" type="application/pdf">'
+                      '<p>브라우저에서 PDF를 표시할 수 없습니다. <a href="briefing/latest.pdf">내려받기</a></p></object>'
+                      '<p class="brief-cap">직전 월 이슈브리핑 — 담당자 검토 후 게시본입니다. '
+                      '<a href="briefing/latest.pdf" download>PDF 내려받기 ⬇</a></p>')
+    else:
+        brief_html = '<p class="brief-empty">이달의 브리핑은 담당자 검토 후 게시될 예정입니다.</p>'
 
     out = PAGE
     repl = {
@@ -477,6 +493,8 @@ def build():
       "@@PFC@@":json.dumps(PREF_COLOR, ensure_ascii=False),
       "@@OVD@@":json.dumps(ovd, ensure_ascii=False).replace("</","<\\/"),
       "@@OVSPARK@@":json.dumps(ovspark, ensure_ascii=False),
+      "@@MINS@@":mins_opts, "@@OVTOT@@":f"{ovstat['tot']:,}", "@@OVPREF@@":f"{ovstat['pref']:,}",
+      "@@BRIEF@@":brief_html,
       "@@OVTOP@@":json.dumps(ovtop, ensure_ascii=False).replace("</","<\\/"),
       "@@OVFRESH@@":ovfresh,
     }
@@ -509,6 +527,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15p
 button{font-family:inherit;cursor:pointer}
 
 /* 노선 스트립(시그니처): 우대분류 5색 노선 */
+.ai-note{background:#FBF6F1;border-bottom:1px solid #E8DED2;color:#6b4634;font-size:13px}
+.ai-note .wrap{padding:9px 22px}
+.ov-trust{margin-top:14px;background:#F5F7FA;border:1px solid #E1E7EF;border-radius:12px;padding:10px 16px;font-size:13.5px;color:#445;display:flex;gap:16px;flex-wrap:wrap}
+.chip-go{cursor:pointer}.chip-go:hover{text-decoration:underline}
+.mcsv{border:1.5px solid rgba(255,255,255,.8);background:rgba(255,255,255,.14);color:#fff;border-radius:999px;padding:11px 16px;font-size:13.5px;font-weight:700;cursor:pointer}
+.mcsv:hover{background:rgba(255,255,255,.26)}
+.cg-desc{padding:14px 18px 0;font-size:13.5px;color:#4A5567;line-height:1.78;word-break:keep-all}
+.brief-pdf{width:100%;height:min(78vh,900px);border:1px solid var(--line);border-radius:12px;background:#fff}
+.brief-cap{margin-top:10px;font-size:13px;color:var(--mut)}
+.brief-empty{padding:44px 10px;text-align:center;color:var(--mut);font-size:15px}
 .gov-bar{background:#fff;border-bottom:1px solid var(--line)}
 .gov-bar .wrap{display:flex;justify-content:space-between;gap:14px;padding:8px 22px;font-size:12px;color:var(--mut)}
 .gov-bar b{color:var(--navy);font-weight:700}
@@ -786,8 +814,21 @@ footer b{color:var(--navy)}
     <button type="button" class="tab active" data-view="ov">법령 모니터링 총괄현황</button>
     <button type="button" class="tab" data-view="monitor">법령 제개정에 따른 자격증 활용도 모니터링</button>
     <button type="button" class="tab" data-view="radar">자격증별 채용시장 우대사항 모니터링</button>
+    <button type="button" class="tab" data-view="brief">월간 이슈브리핑</button>
   </nav>
 </div></header>
+
+<div class="ai-note"><div class="wrap">ⓘ 본 화면의 법령 분석은 AI가 작성하고 담당자의 검증 절차를 거친 <b>참고 정보</b>입니다. 법적 효력이 있는 판단은 반드시 <b>법제처 원문</b>을 확인하시기 바랍니다.</div></div>
+
+<!-- ===== 화면4: 월간 이슈브리핑 ===== -->
+<section id="view-brief" hidden>
+  <div class="hero"><div class="wrap">
+    <div class="eyebrow">🗞 한 달의 변화를 한 부로</div>
+    <h1>월간 이슈브리핑</h1>
+    <p class="lead">매월 자동 생성된 브리핑을 담당자가 검토한 뒤 게시합니다. 직전 월 발행본을 열람하실 수 있습니다.</p>
+  </div></div>
+  <main><div class="wrap">@@BRIEF@@</div></main>
+</section>
 
 <!-- ===== 화면1: 활용도 모니터링 ===== -->
 <section id="view-ov">
@@ -801,6 +842,7 @@ footer b{color:var(--navy)}
     <div class="ov-card fill"><h3>주간 수집 추이 <span>최근 8주 · 검토 법령 수</span></h3><div class="ov-spark" id="ov-spark"></div></div>
     <div class="ov-card"><h3>기간 TOP 10 종목 <span>최근 30일 · 관계법령 등장 횟수</span></h3><div class="ov-chips" id="ov-top"></div></div>
   </div>
+  <div class="ov-trust">🛡 누적 검토 <b>@@OVTOT@@건</b> · 우대 조항 축적 <b>@@OVPREF@@건</b> · 법령 임의 폐기 <b>0건</b> · 매일 새벽 자동 갱신</div>
   <p class="ov-today" id="ov-today"></p>
   <div class="ov-tblcard">
     <table class="ov-tbl"><thead><tr><th>날짜</th><th>총 제·개정법령</th><th>총 검토 법령</th><th>관계법령</th><th>우대법령</th><th>우대 내역</th></tr></thead><tbody id="ov-tb"></tbody></table>
@@ -822,8 +864,10 @@ footer b{color:var(--navy)}
       <span class="count"><b id="cnt">0</b>건 표시 중</span></div>
     <div class="trow">
       <select id="scope" aria-label="검색 범위"><option value="all">전체검색</option><option value="law">법령명</option><option value="cert">자격명칭</option><option value="detail">상세내용</option></select>
+      <select id="minf" aria-label="소관부처 필터"><option value="">부처 전체</option>@@MINS@@</select>
       <div class="search"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="qm" type="search" placeholder="법령명, 자격명칭, 상세내용 검색을 통해 관심내용을 확인하세요!" aria-label="검색"></div>
+      <button type="button" id="m-csv" class="mcsv" title="현재 화면의 검색 결과를 CSV로 저장">⬇ 결과 CSV</button>
     </div>
   </div></div>
   <main><div class="wrap"><div class="grid" id="grid-m">@@M_CARDS@@</div><p class="noresult" id="nores-m">조건에 맞는 법령이 없습니다.</p></div></main>
@@ -840,6 +884,7 @@ footer b{color:var(--navy)}
     <details class="clsguide" open>
       <summary><span class="cg-ic">📊</span> 분류 체계 안내 <span class="cg-sub">— 상세 화면의 분류 표기는 이렇게 읽어요</span><span class="cg-arrow">▾</span></summary>
       <div class="cg-body">
+        <p class="cg-desc">이 안내는 화면 곳곳의 분류 표기를 읽는 방법입니다. 본 서비스는 하나의 법령을 세 가지 눈으로 분석합니다. 먼저 <b>우대분류(5종)</b>는 법령이 자격 취득자에게 주는 실익의 성격 — 반드시 채용·배치해야 하는지(의무고용), 자격자만 할 수 있는 일인지(직무권한부여), 채용·보수·승진에서 유리한지(인사우대), 다른 시험이 면제되는지(시험면제) — 를 구분합니다. <b>Track 1(정책 관점)</b>은 법령이 자격을 어떤 방식으로 다루는지(취급유형 A~E)와 제도 변화의 파급 정도(위험도)를 나타내는 제도 관리자의 지표이고, <b>Track 2(구직자 관점)</b>는 취득자에게 생기는 노동시장 실익을 효용코드(Ⅰ 직업창출 · Ⅱ 취업관문 · Ⅲ 부가우대)로 나타내는 국민의 지표입니다. 아래 표에서 각 코드의 정의를 확인하세요.</p>
         <div class="cg-block">
           <div class="cg-head">우대분류 <span>법령이 자격에 부여하는 우대의 성격</span></div>
           <table class="cg-tbl">
@@ -928,7 +973,7 @@ function pfBadge(p){return '<span class="pf" style="--c:'+(PFC[p]||'#8A8F98')+'"
 
 // ── 탭 전환 ──
 var tabs=[].slice.call(document.querySelectorAll('.tab'));
-var views={ov:document.getElementById('view-ov'),monitor:document.getElementById('view-monitor'),radar:document.getElementById('view-radar')};
+var views={ov:document.getElementById('view-ov'),monitor:document.getElementById('view-monitor'),radar:document.getElementById('view-radar'),brief:document.getElementById('view-brief')};
 tabs.forEach(function(t){t.addEventListener('click',function(){
   tabs.forEach(function(x){x.classList.remove('active');}); t.classList.add('active');
   for(var k in views) views[k].hidden=(k!==t.dataset.view);
@@ -939,6 +984,7 @@ tabs.forEach(function(t){t.addEventListener('click',function(){
 var gm=document.getElementById('grid-m'), mcards=[].slice.call(gm.querySelectorAll('.card'));
 var qm=document.getElementById('qm'), scope=document.getElementById('scope');
 var mfrom=document.getElementById('mfrom'), mto=document.getElementById('mto'), nresM=document.getElementById('nores-m');
+var minf=document.getElementById('minf');
 mfrom.value="@@M_DEF_FROM@@"; mto.value="@@M_DEF_TO@@";
 MLAWS.forEach(function(o){var cs=(o.certs||[]).join(' ');
   o._law=(o.law||'').toLowerCase(); o._cert=cs.toLowerCase();
@@ -947,11 +993,19 @@ MLAWS.forEach(function(o){var cs=(o.certs||[]).join(' ');
 function hay(c){var o=MLAWS[+c.dataset.i];var s=scope.value;return s==='law'?o._law:s==='cert'?o._cert:s==='detail'?o._det:o._all;}
 function fmtM(m){return m?m.slice(0,4)+'.'+m.slice(4,6):'';}
 function filterM(){var term=(qm.value||'').trim().toLowerCase();var a=mfrom.value,b=mto.value;if(a>b){var t=a;a=b;b=t;}var s=0;
-  mcards.forEach(function(c){var on=(c.dataset.month>=a&&c.dataset.month<=b)&&(!term||(hay(c)||'').indexOf(term)!==-1);c.style.display=on?'':'none';if(on)s++;});
+  var mv=minf?minf.value:'';
+  mcards.forEach(function(c){var o=MLAWS[+c.dataset.i];var on=(c.dataset.month>=a&&c.dataset.month<=b)&&(!mv||o.mn===mv)&&(!term||(hay(c)||'').indexOf(term)!==-1);c.style.display=on?'':'none';if(on)s++;});
   document.getElementById('cnt').textContent=s;document.getElementById('heroN').textContent=s;
   document.getElementById('heroPeriod').textContent=fmtM(a)+' ~ '+fmtM(b)+' 기간';nresM.style.display=s?'none':'block';}
-[qm,scope,mfrom,mto].forEach(function(el){el.addEventListener('input',filterM);el.addEventListener('change',filterM);});
+[qm,scope,mfrom,mto,minf].forEach(function(el){el.addEventListener('input',filterM);el.addEventListener('change',filterM);});
 filterM();
+document.getElementById('grid-m').addEventListener('click',function(ev){var t=ev.target.closest('.chip-go');if(!t)return;scope.value='cert';qm.value=t.dataset.c||'';filterM();window.scrollTo({top:0,behavior:'smooth'});});
+var mcv=document.getElementById('m-csv');if(mcv)mcv.addEventListener('click',function(){
+ var rows=[['법령명','소관부처·시행일·유형','관련 종목','주요 제·개정내용']];
+ mcards.forEach(function(c){if(c.style.display==='none')return;var o=MLAWS[+c.dataset.i];
+  rows.push([o.law,(o.meta||''),(o.certs||[]).join(' '),(o.summary_main||'').replace(/\n/g,' ')]);});
+ var blob=new Blob(['\ufeff'+rows.map(function(r){return r.map(function(x){return '"'+String(x).replace(/"/g,'""')+'"';}).join(',');}).join('\n')],{type:'text/csv'});
+ var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='법령검색결과.csv';a.click();});
 
 // ── radar 검색 ──
 var gr=document.getElementById('grid-r'), rcards=[].slice.call(gr.querySelectorAll('.card'));
