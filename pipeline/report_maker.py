@@ -214,7 +214,9 @@ def upload_to_google_sheet(total_len, target_laws, target_date=TARGET_DATE, stat
                         print(f"  🔄 [Update] {existing_id}")
                     else:
                         max_id_num += 1
-                        new_id = f"HRDK-L-{max_id_num:04d}"
+                        # ★2026-08-03: 4→5자리 확장(용량 9,999→99,999). 기존 ID 불변,
+                        #   신규 발급분부터 적용 — 파싱은 int(split)이라 자릿수 혼재 무해.
+                        new_id = f"HRDK-L-{max_id_num:05d}"
                         info["MST_ID"] = new_id
                         row_data = _row_for_sheet(info, COLUMNS)
                         new_rows_to_append.append(row_data)
