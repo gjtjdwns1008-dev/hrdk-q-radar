@@ -702,13 +702,15 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
     p = doc.add_paragraph(); _run(p, "■ 분류체계 안내 — Track 1·2 읽는 법", size=12, color=BLUE, bold=True)
     # ★2026-08-03: 관계부서 독자용 도입 설명(네비게이터 안내문과 동일 취지)
     p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.2)
-    _run(p, "본 브리핑의 우대 분석은 세 가지 눈으로 읽습니다. ① 우대분류(5종)는 법령이 "
-            "자격 취득자에게 부여하는 실익의 성격 — 의무고용(자격자를 반드시 선임·배치), "
-            "직무권한부여(자격자만 수행 가능한 직무), 인사우대(채용·보수·승진 가점), "
-            "시험면제, 기타 — 를 구분합니다. ② Track 1(정책 관점)은 법령이 자격을 다루는 "
-            "방식(취급유형 A~E)과 제도 변화의 파급 정도(위험도)를, ③ Track 2(구직자 관점)는 "
-            "취득자에게 생기는 노동시장 실익(효용코드 Ⅰ 직업창출·Ⅱ 취업관문·Ⅲ 부가우대)을 "
-            "나타냅니다. 아래 표는 각 코드의 정의입니다.", size=10, color=DARKGRAY)
+    _run(p, "본 브리핑의 분류 표기는 세 가지 눈으로 읽습니다. 먼저 우대분류(5종)는 "
+            "법령이 자격 취득자에게 주는 실익의 성격 — 반드시 채용·배치해야 하는지"
+            "(의무고용), 자격자만 할 수 있는 일인지(직무권한부여), 채용·보수·승진에서 "
+            "유리한지(인사우대), 다른 자격 시험이 면제되는지(시험면제) — 를 구분합니다. "
+            "Track 1(정책 관점)은 법령이 자격을 어떤 방식으로 다루는지(취급유형 A~E)와 "
+            "제도 변화의 파급 정도(위험도)를 나타내는 제도 관리자의 지표이고, "
+            "Track 2(구직자 관점)는 취득자에게 생기는 노동시장 실익을 효용코드"
+            "(Ⅰ 직업창출 · Ⅱ 취업관문 · Ⅲ 부가우대)로 나타내는 국민의 지표입니다. "
+            "아래 표는 각 분류·코드의 정의입니다.", size=10, color=DARKGRAY)
 
     def _guide_table(title, rows, note=None):
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
@@ -734,6 +736,14 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
             p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
             _run(p, note, size=8.5, color=GRAY)
         doc.add_paragraph()
+
+    _guide_table("· 우대분류 (5종) — 법령이 자격에 부여하는 우대의 성격", [
+        ("우대분류", "의무고용", "사업 등록·허가를 위해 자격 취득자를 고용(배치)해야 함 — 검사·검정 등 위탁기관 지정 포함"),
+        ("", "직무권한부여", "고용을 전제하지 않고 자격자만 수행할 수 있는 직무 — 확인·측정, 서류 작성·검토, 위원 위촉 등"),
+        ("", "인사우대", "채용(가점·과목 면제·경력경쟁채용)·보수(수당·노임 가산)·평정·승진에서의 우대"),
+        ("", "시험면제", "다른 자격 취득 시험(검정)의 전부·일부 면제 — 채용 관련 면제는 인사우대로 분류"),
+        ("", "기타", "직접적인 자격 우대에 해당하지 않는 경우"),
+    ], note="※ 한국직업능력연구원 「국가기술자격 우대법령 유형화」 체계 승계")
 
     _guide_table("· Track 1 (정책 관점) — 법령이 자격을 '어떻게' 다루는지", [
         ("취급유형", "A 신분형성형", "자격 취득자만 해당 명칭·신분을 사용할 수 있음"),
@@ -833,9 +843,20 @@ def _build_pref_part(doc, preferred, pref_foreword=""):
     _run(p, "· 선정 기준 : 위험도 상위(임계 C → 고위험 H → …) — 정책 검토 우선순위 순", size=9, color=GRAY)
     _RORD = {"C": 0, "H": 1, "M": 2, "L": 3, "N": 4}
     _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
-    top = sorted(preferred, key=lambda x: (_RORD.get(_code(x.get("Track1_위험도", "")), 9),
-                                           _PORD.get(_no_krivet(x.get("우대분류", "")), 9),
-                                           str(x.get("법령명", ""))))[:5]
+    # ★2026-08-03: 같은 달 복수 개정된 동일 법령(예: 선박안전법 시행규칙 7/13·7/27)은
+    #   사례 카드에 1건만 대표 노출 — 우선순위 정렬 후 법령명 첫 등장만 채택.
+    #   (월간 상세목록 xlsx에는 전 행 보존 = 무손실 원칙 유지)
+    _ranked = sorted(preferred, key=lambda x: (_RORD.get(_code(x.get("Track1_위험도", "")), 9),
+                                               _PORD.get(_no_krivet(x.get("우대분류", "")), 9),
+                                               str(x.get("법령명", ""))))
+    _seen_law, top = set(), []
+    for x in _ranked:
+        nm = str(x.get("법령명", "")).strip()
+        if nm in _seen_law:
+            continue
+        _seen_law.add(nm); top.append(x)
+        if len(top) == 5:
+            break
     for i, r in enumerate(top, 1):
         doc.add_paragraph()
         p = doc.add_paragraph(); _add_left_border(p, NAVY)
@@ -1189,6 +1210,14 @@ def main():
         big_laws = [r for r in high if r.get("활용도_구분", "") in ("소폭 증가", "소폭 감소")]
         _fb_note = ("이달은 자격 활용도가 '대폭' 변동한 법령이 없어, 소폭 변동 법령 중 "
                     "관련 종목 파급이 큰 사례를 핵심 이슈로 선별하였습니다. ")
+    # ★2026-08-03: 제1부 후보도 동일 법령 복수 개정 시 최신 시행일 1건 대표(예방)
+    _s1, _u1 = set(), []
+    for r in sorted(big_laws, key=lambda x: str(x.get("시행일자", "")), reverse=True):
+        nm = str(r.get("법령명", "")).strip()
+        if nm in _s1:
+            continue
+        _s1.add(nm); _u1.append(r)
+    big_laws = _u1
     selected = select_top_laws(big_laws, TOP_N)
     foreword = make_foreword(selected, TARGET_MONTH)
     if _fb_note:
