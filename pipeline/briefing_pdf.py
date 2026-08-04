@@ -318,7 +318,30 @@ def _part1(foreword, issues, chart_path, field_chart_path):
 def _part2(preferred, pref_foreword):
     pref_n = len(preferred)
     fw = f'<div class="sect"><div class="fw">{esc(pref_foreword)}</div></div>' if pref_foreword else ""
-    guide = ('<div class="sect"><h2>분류체계 안내 <em>Track 1·2 읽는 법</em></h2>'
+    _gdesc = ('<div style="font-size:8.6pt;color:#3A4454;line-height:1.72;margin:1mm 0 2.6mm">'
+              '본 브리핑의 분류 표기는 세 가지 눈으로 읽습니다. 먼저 <b>우대분류(5종)</b>는 '
+              '법령이 자격 취득자에게 주는 실익의 성격 — 반드시 채용·배치해야 하는지(의무고용), '
+              '자격자만 할 수 있는 일인지(직무권한부여), 채용·보수·승진에서 유리한지(인사우대), '
+              '다른 자격 시험이 면제되는지(시험면제) — 를 구분합니다. <b>Track 1(정책 관점)</b>은 '
+              '법령이 자격을 어떤 방식으로 다루는지(취급유형)와 제도 변화의 파급 정도(위험도)를 '
+              '나타내는 제도 관리자의 지표이고, <b>Track 2(구직자 관점)</b>는 취득자에게 생기는 '
+              '노동시장 실익(효용코드)을 나타내는 국민의 지표입니다. 아래 표는 각 분류·코드의 '
+              '정의입니다.</div>')
+    _PREF5 = [
+        ("의무고용", "사업 등록·허가를 위해 자격 취득자를 고용(배치)해야 함 — 검사·검정 등 위탁기관 지정 포함"),
+        ("직무권한부여", "고용을 전제하지 않고 자격자만 수행할 수 있는 직무 — 확인·측정, 서류 작성·검토, 위원 위촉 등"),
+        ("인사우대", "채용(가점·과목 면제·경력경쟁채용)·보수(수당·노임 가산)·평정·승진에서의 우대"),
+        ("시험면제", "다른 자격 취득 시험(검정)의 전부·일부 면제 — 채용 관련 면제는 인사우대로 분류"),
+        ("기타", "직접적인 자격 우대에 해당하지 않는 경우"),
+    ]
+    guide_intro = ('<div style="font-size:8.6pt;color:#3A4454;line-height:1.72;margin:1mm 0 2.4mm">' 
+                   '본 브리핑의 분류 표기는 세 가지 눈으로 읽습니다. 먼저 <b>우대분류(5종)</b>는 법령이 자격 취득자에게 주는 실익의 성격 — 반드시 채용·배치해야 하는지(의무고용), 자격자만 할 수 있는 일인지(직무권한부여), 채용·보수·승진에서 유리한지(인사우대), 다른 자격 시험이 면제되는지(시험면제) — 를 구분합니다. <b>Track 1(정책 관점)</b>은 법령이 자격을 어떤 방식으로 다루는지와 파급 정도를, <b>Track 2(구직자 관점)</b>는 취득자에게 생기는 노동시장 실익을 나타냅니다. 아래 표는 각 분류·코드의 정의입니다.</div>')
+    guide_pref5 = _guide_table("우대분류 (5종) — 법령이 자격에 부여하는 우대의 성격", "기준", "#1F3864", _PREF5)
+    guide = ('<div class="sect"><h2>분류체계 안내 <em>우대분류 5종 · Track 1·2 읽는 법</em></h2>' + guide_intro + guide_pref5
+             + _gdesc
+             + _guide_table("우대분류 — 법령이 자격에 부여하는 우대의 성격", "직능연 5종 승계", "#2E6B4F", _PREF5)
+             + '<div style="font-size:7.6pt;color:#8A93A0;margin-top:1mm">※ 한국직업능력연구원 「국가기술자격 우대법령 유형화」 체계 승계</div>'
+             + '<div style="height:2.5mm"></div>'
              + _guide_table("취급유형 — 법령이 자격을 다루는 방식", "Track 1 · 정책", NAVY, _T1_TYPE)
              + '<div style="height:2.5mm"></div>'
              + _guide_table("위험도 — 경력이음형 자격제도와 충돌하는 정도", "Track 1 · 정책", NAVY, _T1_RISK)
@@ -382,9 +405,18 @@ def _part2(preferred, pref_foreword):
     # 사례 카드 (위험도 우선)
     _RORD = {"C": 0, "H": 1, "M": 2, "L": 3, "N": 4}
     _PORD = {"의무고용": 0, "직무권한부여": 1, "인사우대": 2, "시험면제": 3}
-    top = sorted(preferred, key=lambda x: (_RORD.get(_code(x.get("Track1_위험도", "")), 9),
-                                           _PORD.get(_no_krivet(x.get("우대분류", "")), 9),
-                                           str(x.get("법령명", ""))))[:5]
+    # ★2026-08-03: 같은 달 복수 개정된 동일 법령은 사례 카드에 1건만(대표) — docx와 동일 원칙
+    _ranked = sorted(preferred, key=lambda x: (_RORD.get(_code(x.get("Track1_위험도", "")), 9),
+                                               _PORD.get(_no_krivet(x.get("우대분류", "")), 9),
+                                               str(x.get("법령명", ""))))
+    _seen, top = set(), []
+    for x in _ranked:
+        nm = str(x.get("법령명", "")).strip()
+        if nm in _seen:
+            continue
+        _seen.add(nm); top.append(x)
+        if len(top) == 5:
+            break
     cards = []
     for i, r in enumerate(top, 1):
         cls = _no_krivet(r.get("우대분류", "")) or "기타"
