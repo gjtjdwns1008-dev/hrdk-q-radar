@@ -343,7 +343,7 @@ def _part2(preferred, pref_foreword):
         w = max(10, int(v / mx * 100))
         bars.append(f'<div class="bar"><span class="nm">{esc(k)}</span>'
                     f'<span class="tr"><span class="fl" style="width:{w}%;background:{color}">'
-                    f'<span class="dot"></span></span></span><span class="ct">{v}</span></div>')
+                    f'<span class="dot"></span></span></span><span class="ct">{v}건</span></div>')
 
     # 현황 칩
     ttype = Counter(_code(r.get("Track1_취급유형", "")) or "-" for r in preferred)
@@ -362,14 +362,14 @@ def _part2(preferred, pref_foreword):
             if c and c != "없음":
                 certs[c] += 1
     sap = [r for r in preferred if str(r.get("중처법대상", "")).strip() == "대상"]
-    tstats = "".join(f'<span class="stat"><b>{k}</b> {TYPE_KO[k]}<span class="n">{ttype[k]}</span></span>'
+    tstats = "".join(f'<span class="stat"><b>{k}</b> {TYPE_KO[k]}<span class="n">{ttype[k]}건</span></span>'
                      for k in "ABCDE" if ttype.get(k)) or "-"
-    rchips = "".join(f'<span class="chip" style="background:{RISK_BG[k]}">{k} {RISK_KO[k]} {risk[k]}</span>'
+    rchips = "".join(f'<span class="chip" style="background:{RISK_BG[k]}">{k} {RISK_KO[k]} {risk[k]}건</span>'
                      for k in ("C", "H", "M", "L", "N") if risk.get(k)) or "-"
     _GNAME = (("Ⅰ", "직업창출"), ("Ⅱ", "취업관문"), ("Ⅲ", "부가우대"))
-    gstats = "".join(f'<span class="stat t2"><b>{g}</b> {nm}<span class="n">{grp[g]}</span></span>'
+    gstats = "".join(f'<span class="stat t2"><b>{g}</b> {nm}<span class="n">{grp[g]}건</span></span>'
                      for g, nm in _GNAME if grp.get(g)) or "-"
-    cstats = "".join(f'<span class="stat gy">{esc(k)}<span class="n">{v}</span></span>'
+    cstats = "".join(f'<span class="stat gy">{esc(k)}<span class="n">{v}건</span></span>'
                      for k, v in certs.most_common(5)) or "-"
     sap_html = ""
     if sap:
