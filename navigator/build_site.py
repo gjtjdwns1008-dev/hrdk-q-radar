@@ -886,7 +886,7 @@ footer b{color:var(--navy)}
   </div></div>
   <div class="wrap">
     <details class="clsguide" open>
-      <summary><span class="cg-ic">📊</span> 분류 체계 안내 <span class="cg-sub">— 상세 화면의 분류 표기는 이렇게 읽어요</span><span class="cg-arrow">▾</span></summary>
+      <summary><span class="cg-ic">📊</span> 분류 체계 안내 <span class="cg-sub">— 상세 화면의 분류 표기는 이렇게 읽어요 · 이 띠를 누르면 안내가 열리고 닫힙니다</span><span class="cg-arrow">▾</span></summary>
       <div class="cg-body">
         <p class="cg-desc">이 안내는 화면 곳곳의 분류 표기를 읽는 방법입니다. 본 서비스는 하나의 법령을 세 가지 눈으로 분석합니다. 먼저 <b>우대분류(5종)</b>는 법령이 자격 취득자에게 주는 실익의 성격 — 반드시 채용·배치해야 하는지(의무고용), 자격자만 할 수 있는 일인지(직무권한부여), 채용·보수·승진에서 유리한지(인사우대), 다른 시험이 면제되는지(시험면제) — 를 구분합니다. <b>Track 1(정책 관점)</b>은 법령이 자격을 어떤 방식으로 다루는지(취급유형 A~E)와 제도 변화의 파급 정도(위험도)를 나타내는 제도 관리자의 지표이고, <b>Track 2(구직자 관점)</b>는 취득자에게 생기는 노동시장 실익을 효용코드(Ⅰ 직업창출 · Ⅱ 취업관문 · Ⅲ 부가우대)로 나타내는 국민의 지표입니다. 아래 표에서 각 코드의 정의를 확인하세요.</p>
         <div class="cg-block">
