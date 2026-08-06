@@ -475,10 +475,35 @@ def build():
     if os.path.exists(brief_src):
         os.makedirs(os.path.join(OUT_DIR, "briefing"), exist_ok=True)
         shutil.copy(brief_src, os.path.join(OUT_DIR, "briefing", "latest.pdf"))
-        brief_html = ('<object class="brief-pdf" data="briefing/latest.pdf" type="application/pdf">'
-                      '<p>브라우저에서 PDF를 표시할 수 없습니다. <a href="briefing/latest.pdf">내려받기</a></p></object>'
-                      '<p class="brief-cap">직전 월 이슈브리핑 — 담당자 검토 후 게시본입니다. '
-                      '<a href="briefing/latest.pdf" download>PDF 내려받기 ⬇</a></p>')
+        # ★2026-08-05: PDF 임베드(object)는 내장 뷰어 없는 PC·HTML 저장본에서 검게
+        #   표출되는 한계 → 빌드 시 쪽별 PNG로 변환해 이미지로 표출(뷰어 불필요·
+        #   저장본 호환·모바일 안정). 변환 도구(pdftoppm) 부재 시 종전 방식 자동 폴백.
+        pages = []
+        if shutil.which("pdftoppm"):
+            import subprocess, glob as _g
+            for _old in _g.glob(os.path.join(OUT_DIR, "briefing", "page-*.png")):
+                os.remove(_old)
+            try:
+                subprocess.run(["pdftoppm", "-png", "-r", "110",
+                                os.path.join(OUT_DIR, "briefing", "latest.pdf"),
+                                os.path.join(OUT_DIR, "briefing", "page")],
+                               check=True, timeout=120)
+                pages = sorted(_g.glob(os.path.join(OUT_DIR, "briefing", "page-*.png")))
+            except Exception as _e:
+                print(f"  ⚠ 브리핑 이미지 변환 실패 → PDF 임베드 폴백: {_e}")
+        if pages:
+            imgs = "".join(
+                f'<img class="brief-page" src="briefing/{os.path.basename(_p)}" '
+                f'alt="월간 이슈브리핑 {_i+1}쪽" loading="lazy">'
+                for _i, _p in enumerate(pages))
+            brief_html = ('<p class="brief-cap"><a class="brief-dl" href="briefing/latest.pdf" '
+                          'download>PDF 원본 내려받기 ⬇</a> 직전 월 이슈브리핑 — 담당자 검토 후 '
+                          '게시본입니다.</p>' + imgs)
+        else:
+            brief_html = ('<object class="brief-pdf" data="briefing/latest.pdf" type="application/pdf">'
+                          '<p>브라우저에서 PDF를 표시할 수 없습니다. <a href="briefing/latest.pdf">내려받기</a></p></object>'
+                          '<p class="brief-cap">직전 월 이슈브리핑 — 담당자 검토 후 게시본입니다. '
+                          '<a href="briefing/latest.pdf" download>PDF 내려받기 ⬇</a></p>')
     else:
         brief_html = '<p class="brief-empty">이달의 브리핑은 담당자 검토 후 게시될 예정입니다.</p>'
 
@@ -538,6 +563,9 @@ button{font-family:inherit;cursor:pointer}
 .mcsv{border:1.5px solid rgba(255,255,255,.8);background:rgba(255,255,255,.14);color:#fff;border-radius:999px;padding:11px 16px;font-size:13.5px;font-weight:700;cursor:pointer}
 .mcsv:hover{background:rgba(255,255,255,.26)}
 .cg-desc{padding:14px 18px 0;font-size:13.5px;color:#4A5567;line-height:1.78;word-break:keep-all}
+.brief-page{width:100%;display:block;border:1px solid var(--line);border-radius:10px;margin:0 0 12px;box-shadow:0 1px 6px rgba(0,0,0,.06)}
+.brief-dl{display:inline-block;background:#2e4a6b;color:#fff;padding:7px 14px;border-radius:8px;font-weight:700;text-decoration:none;margin-right:8px}
+.brief-dl:hover{background:#3d5a80}
 .brief-pdf{width:100%;height:min(78vh,900px);border:1px solid var(--line);border-radius:12px;background:#fff}
 .brief-cap{margin-top:10px;font-size:13px;color:var(--mut)}
 .brief-empty{padding:44px 10px;text-align:center;color:var(--mut);font-size:15px}
