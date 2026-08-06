@@ -569,6 +569,16 @@ button{font-family:inherit;cursor:pointer}
 .brief-pdf{width:100%;height:min(78vh,900px);border:1px solid var(--line);border-radius:12px;background:#fff}
 .brief-cap{margin-top:10px;font-size:13px;color:var(--mut)}
 .brief-empty{padding:44px 10px;text-align:center;color:var(--mut);font-size:15px}
+.fab{position:fixed;right:18px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:60}
+.fab-btn{width:46px;height:46px;border-radius:50%;border:1px solid #D8DFE8;background:#fff;color:#2E4A6B;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,70,.18)}
+.fab-btn:hover{background:#F2F6FB}
+.fab-top{background:#2E4A6B;color:#fff;border-color:#2E4A6B}
+.fab-top:hover{background:#3D5A80}
+.fab-menu{position:fixed;right:74px;bottom:22px;background:#fff;border:1px solid #D8DFE8;border-radius:14px;box-shadow:0 10px 30px rgba(20,40,70,.2);padding:8px;z-index:61;display:flex;flex-direction:column;gap:4px}
+.fab-mi{border:0;background:#fff;text-align:left;padding:9px 14px;border-radius:9px;font-size:13.5px;font-weight:700;color:#2E4A6B;cursor:pointer;white-space:nowrap}
+.fab-mi:hover{background:#EEF3F9}
+.fab-toast{position:fixed;right:18px;bottom:82px;background:#1F3557;color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;z-index:62;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+@media(max-width:707px){.fab{right:12px;bottom:14px}.fab-menu{right:64px;bottom:14px}}
 .gov-bar{background:#fff;border-bottom:1px solid var(--line)}
 .gov-bar .wrap{display:flex;justify-content:space-between;gap:14px;padding:8px 22px;font-size:12px;color:var(--mut)}
 .gov-bar b{color:var(--navy);font-weight:700}
@@ -994,6 +1004,14 @@ footer b{color:var(--navy)}
 <div class="modal" id="modal" aria-hidden="true" role="dialog" aria-modal="true"><div class="modal-backdrop"></div><div class="modal-panel"><button class="modal-close" aria-label="닫기">&times;</button><div id="m-body"></div></div></div>
 <div class="modal" id="modal2" aria-hidden="true" role="dialog" aria-modal="true"><div class="modal-backdrop"></div><div class="modal-panel"><button class="modal-close" aria-label="닫기">&times;</button><div id="m2-body"></div></div></div>
 
+<div id="fab" class="fab" hidden>
+  <button type="button" class="fab-btn" id="fab-nav" title="화면 이동" aria-label="화면 이동 메뉴">☰</button>
+  <button type="button" class="fab-btn" id="fab-copy" title="현재 주소 복사" aria-label="현재 주소 복사">🔗</button>
+  <button type="button" class="fab-btn fab-top" id="fab-top" title="맨 위로" aria-label="맨 위로">↑</button>
+</div>
+<div id="fab-menu" class="fab-menu" hidden></div>
+<div id="fab-toast" class="fab-toast" hidden>주소가 복사되었습니다</div>
+
 <script>
 var OVD=@@OVD@@,OVSPARK=@@OVSPARK@@,OVTOP=@@OVTOP@@;
 var MLAWS=@@MLAWS@@, RCERTS=@@RCERTS@@, RENTRIES=@@RENTRIES@@, T1TYPE=@@T1TYPE@@, T1RISK=@@T1RISK@@, T2=@@T2@@, PFC=@@PFC@@;
@@ -1011,6 +1029,36 @@ tabs.forEach(function(t){t.addEventListener('click',function(){
   for(var k in views) views[k].hidden=(k!==t.dataset.view);
   window.scrollTo(0,0);
 });});
+
+// ── 플로팅 바 (★2026-08-06): 맨 위로 · 화면 이동 · 주소 복사 ──
+(function(){
+ var fab=document.getElementById('fab'),menu=document.getElementById('fab-menu'),
+     toast=document.getElementById('fab-toast');
+ if(!fab)return;
+ tabs.forEach(function(t){
+   var b=document.createElement('button');b.type='button';b.className='fab-mi';
+   b.textContent=t.textContent;
+   b.addEventListener('click',function(){t.click();menu.hidden=true;});
+   menu.appendChild(b);
+ });
+ window.addEventListener('scroll',function(){
+   var on=window.scrollY>360; fab.hidden=!on; if(!on)menu.hidden=true;
+ },{passive:true});
+ document.getElementById('fab-top').addEventListener('click',function(){
+   window.scrollTo({top:0,behavior:'smooth'});});
+ document.getElementById('fab-nav').addEventListener('click',function(){
+   menu.hidden=!menu.hidden;});
+ document.getElementById('fab-copy').addEventListener('click',function(){
+   var u=location.href.split('#')[0];
+   function done(){toast.hidden=false;setTimeout(function(){toast.hidden=true;},1800);}
+   function fb(){var i=document.createElement('input');i.value=u;document.body.appendChild(i);
+     i.select();try{document.execCommand('copy');done();}catch(e){}document.body.removeChild(i);}
+   if(navigator.clipboard&&navigator.clipboard.writeText){
+     navigator.clipboard.writeText(u).then(done,fb);}else fb();
+ });
+ document.addEventListener('click',function(ev){
+   if(!menu.hidden&&!menu.contains(ev.target)&&ev.target.id!=='fab-nav')menu.hidden=true;});
+})();
 
 // ── monitor 검색/기간 ──
 var gm=document.getElementById('grid-m'), mcards=[].slice.call(gm.querySelectorAll('.card'));
