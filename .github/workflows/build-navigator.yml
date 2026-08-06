@@ -48,6 +48,9 @@ jobs:
           python-version: "3.11"
       - name: 의존성 설치 (네비게이터는 core 미의존 — 경량)
         run: pip install "gspread>=5.12,<7" oauth2client
+      - name: PDF 변환 도구 설치 (브리핑 이미지화 · ★2026-08-05)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
       - name: 사이트 생성 (통합 대장 → dist/index.html)
         env:
           QRADAR_SA_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
