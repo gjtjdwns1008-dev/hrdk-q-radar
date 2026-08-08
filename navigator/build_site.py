@@ -637,7 +637,7 @@ main .wrap{padding:26px 22px 60px}
 #grid-m .card{position:relative;background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:18px 20px 16px 46px;transition:border-color .15s, transform .15s}
 #grid-m .card:hover{border-color:var(--navy);transform:translateX(3px)}
 #grid-m .card::before{content:"";position:absolute;left:22px;top:16px;bottom:16px;width:5px;border-radius:99px;background:var(--l2)}
-#grid-m .card::after{content:"";position:absolute;left:19.5px;top:22px;width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid var(--l2)}
+#grid-m .card::after{content:"";position:absolute;box-sizing:border-box;left:16.5px;top:22px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--l2)}
 .c-date{display:inline-flex;align-items:baseline;gap:6px;font-size:12.5px;font-weight:800;color:var(--navy);background:#EEF3FB;border-radius:8px;padding:3px 10px;font-variant-numeric:tabular-nums;margin-bottom:7px}
 .c-date small{font-weight:600;color:var(--mut)}
 .card-title{font-size:17.5px;font-weight:800;line-height:1.4;letter-spacing:-.01em}
