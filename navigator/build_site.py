@@ -756,6 +756,9 @@ background:linear-gradient(90deg,var(--l1) 0 20%,var(--l2) 20% 40%,var(--l3) 40%
 .m2-law{font-size:13px;color:var(--mut)}
 .m2-art{font-weight:800}
 .m2-acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:22px}
+.m2-back{border:0;background:#EEF3FB;color:var(--navy);font-size:12.5px;font-weight:800;padding:8px 14px;border-radius:999px;cursor:pointer;font-family:inherit;margin-bottom:16px}
+.m2-back:hover{background:#DEE8F6}
+.m2-usetag{font-size:11.5px;font-weight:800;color:#5B7EA6;letter-spacing:.4px;margin-bottom:6px}
 .m2-jump{border:2px solid var(--navy);background:#fff;color:var(--navy);font-size:13px;font-weight:700;padding:9px 17px;border-radius:999px;cursor:pointer;font-family:inherit}
 .m2-jump:hover{background:#EEF3FB}
 .m2-ext{display:inline-block;margin-top:0;background:var(--navy);color:#fff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px}
@@ -1183,26 +1186,25 @@ function openLaw(ei){var l=RENTRIES[ei];if(!l)return;
   if(l.lk&&l.lk.length){h+='<div class="m-sec"><h4>조문별 원문 바로가기</h4><div class="artlinks">';
     for(var k=0;k<l.lk.length;k++){h+='<a class="artlink" href="'+escq(l.lk[k].u)+'" target="_blank" rel="noopener">'+escq(l.lk[k].t)+' →</a>';}
     h+='</div></div>';}
-  var _jm=monMonth(l.law);
+  var _mi=monIndex(l.law);
   h+='<div class="m2-acts">';
-  if(_jm)h+='<button type="button" class="m2-jump" data-law="'+escq(l.law)+'">이 법령의 활용도 분석 보기 →</button>';
+  if(_mi>=0)h+='<button type="button" class="m2-jump" data-ei="'+ei+'">이 법령의 활용도 분석 보기 →</button>';
   h+='<a class="m2-ext" href="'+escq(lawUrl(l.law))+'" target="_blank" rel="noopener">법제처에서 원문 보기 →</a></div>';
   mb2.innerHTML=h;openM(modal2);}
 
-// ★2026-08-08: 우대 팝업 → 활용도 화면 점프 (같은 HTML 내 탭 전환 + 검색 조건 주입)
-function monMonth(name){var t=(name||'').replace(/\s/g,''),best=null;
+// ★2026-08-08: 우대 팝업 ↔ 활용도 분석 팝업 — 화면 이동 없이 같은 창의 내용만 교체
+function monIndex(name){var t=(name||'').replace(/\s/g,''),bi=-1,bm='';
   for(var i=0;i<MLAWS.length;i++){var o=MLAWS[i];
     if((o.law||'').replace(/\s/g,'')!==t)continue;
-    if(!best||(o.month||'')>best)best=o.month;}
-  return best;}
-function jumpMonitor(name){var mo=monMonth(name);if(!mo)return;
-  closeModal2();closeModal();
-  var tb=document.querySelector('.tab[data-view="monitor"]');if(tb)tb.click();
-  scope.value='law';qm.value=name;if(minf)minf.value='';
-  if(mfrom.value>mo)mfrom.value=mo;          // 기본 범위(최근 2개월) 밖이면 자동 확장
-  if(mto.value<mo)mto.value=mo;
-  filterM();window.scrollTo({top:0,behavior:'smooth'});}
-mb2.addEventListener('click',function(e){var b=e.target.closest('.m2-jump');if(b)jumpMonitor(b.dataset.law||'');});
+    if(bi<0||(o.month||'')>bm){bi=i;bm=o.month||'';}}   // 동일 법령 복수 개정 시 최신 행
+  return bi;}
+function openUse(ei){var l=RENTRIES[ei];if(!l)return;var i=monIndex(l.law);if(i<0)return;
+  mb2.innerHTML='<button type="button" class="m2-back" data-ei="'+ei+'">← 우대 분석으로 돌아가기</button>'
+    +'<div class="m2-usetag">활용도 분석 · 일일 모니터링 기준</div>'+monitorHTML(MLAWS[i]);
+  openM(modal2);}
+mb2.addEventListener('click',function(e){
+  var b=e.target.closest('.m2-jump');if(b){openUse(+b.dataset.ei);return;}
+  var k=e.target.closest('.m2-back');if(k){openLaw(+k.dataset.ei);return;}});
 
 gm.addEventListener('click',function(e){var t=e.target.closest('.title-btn,.detail-link');if(!t)return;var c=t.closest('.card');if(c)openMonitor(+c.dataset.i);});
 gr.addEventListener('click',function(e){var t=e.target.closest('.title-btn,.detail-link');if(!t)return;var c=t.closest('.card');if(c)openCert(+c.dataset.i);});
