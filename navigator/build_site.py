@@ -28,7 +28,7 @@ MCOL = {"law":"법령명","ministry":"소관부처","date":"시행일자","kind"
         "certs":"관련 종목","article":"근거조문","link":"조문별 다이렉트 링크"}
 RCOL = {"law":"법령명","article":"근거조문","pref":"우대분류","certs":"관련 종목",
         "t1type":"Track1_취급유형","t1risk":"Track1_위험도","t2":"Track2_효용코드",
-        "sjb":"중처법대상","detail":"상세 분석 결과","rel":"연관도",
+        "sjb":"중처법대상","detail":"상세 분석 결과","summary":"조문 요약","rel":"연관도",
         "eff":"시행일자","reason":"검토사유","links":"조문별 다이렉트 링크"}
 PREF_ORDER = ["의무고용","직무권한부여","인사우대","시험면제","기타"]
 PREF_COLOR = {"의무고용":"#C0492F","직무권한부여":"#1F6FB2","인사우대":"#0F6E56","시험면제":"#5B4BB0","기타":"#8A8F98"}
@@ -363,6 +363,8 @@ def r_build(rows):
         e["_k"] = digits(eff)                              # ★내부 정렬키(최신 판별용, 출력 전 제거)
         det = str(r.get(RCOL["detail"]) or "").strip()    # 관련법령 탭의 상세 분석 결과(직접 보유)
         if det: e["d"] = det
+        smy = str(r.get(RCOL["summary"]) or "").strip()   # ★2026-08-08: 조문 요약(무엇이 바뀌었나)
+        if smy: e["sm"] = smy
         rsn = str(r.get(RCOL["reason"]) or "").strip()    # 검토사유
         # ★공개 화면 순화(2026-07-07): 내부 운영 문구(별표 미확보·다운로드 실패·자동검증
         #   무효화 등)는 국민 눈높이 고정 문구로 치환. 원문 사유는 시트(내부)에서만 열람.
@@ -753,7 +755,10 @@ background:linear-gradient(90deg,var(--l1) 0 20%,var(--l2) 20% 40%,var(--l3) 40%
 .artlink:hover{background:var(--navy);color:#fff}
 .m2-law{font-size:13px;color:var(--mut)}
 .m2-art{font-weight:800}
-.m2-ext{display:inline-block;margin-top:22px;background:var(--navy);color:#fff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px}
+.m2-acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:22px}
+.m2-jump{border:2px solid var(--navy);background:#fff;color:var(--navy);font-size:13px;font-weight:700;padding:9px 17px;border-radius:999px;cursor:pointer;font-family:inherit}
+.m2-jump:hover{background:#EEF3FB}
+.m2-ext{display:inline-block;margin-top:0;background:var(--navy);color:#fff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px}
 .m2-ext:hover{background:var(--l2)}
 .note,.note-sec{font-size:12.5px;color:var(--mut)}
 .nc-item{border:1.5px solid var(--line);border-radius:14px;background:#fff;padding:13px 15px;margin-top:10px}
@@ -1165,6 +1170,7 @@ function openCert(i){var d=RCERTS[i];if(!d)return;
 function trkBlock(k,code,name,desc,sub){return '<div class="trk"><div class="k">'+k+'</div><div class="v">'+escq(code)+(name?' · '+escq(name):'')+(sub?' <span class="sub">('+escq(sub)+')</span>':'')+'</div>'+(desc?'<div class="d">'+escq(desc)+'</div>':'')+'</div>';}
 function openLaw(ei){var l=RENTRIES[ei];if(!l)return;
   var h='<h2 class="m2-law">'+escq(l.law)+'</h2><div class="m2-art">'+escq(l.a)+(l.e?' · 시행 '+escq(l.e):'')+'</div><div class="m-pfs" style="margin-top:12px;">'+pfBadge(l.p)+'</div>';
+  if(l.sm)h+='<div class="m-sec"><h4>조문 요약 · 무엇이 바뀌었나</h4><p style="margin:0;font-size:14.5px;line-height:1.7;">'+escq(l.sm)+'</p></div>';
   h+='<div class="m-sec"><h4>상세 분석 결과</h4>'+(l.d?'<p style="margin:0;font-size:14.5px;line-height:1.7;">'+escq(l.d)+'</p>':'<p style="margin:0;font-size:14px;color:var(--muted);">상세 분석 결과는 일일 분석(관련법령) 연동 시 표시됩니다.</p>')+'</div>';
   if(l.r)h+='<div class="m-sec note-sec"><h4>📌 참고: 직접 확인이 필요한 내용</h4><p style="margin:0;font-size:13.5px;line-height:1.65;color:#8A5A00;">'+escq(l.r)+'</p></div>';
   var tt=T1TYPE[l.t1],tr=T1RISK[l.t1r];
@@ -1177,8 +1183,26 @@ function openLaw(ei){var l=RENTRIES[ei];if(!l)return;
   if(l.lk&&l.lk.length){h+='<div class="m-sec"><h4>조문별 원문 바로가기</h4><div class="artlinks">';
     for(var k=0;k<l.lk.length;k++){h+='<a class="artlink" href="'+escq(l.lk[k].u)+'" target="_blank" rel="noopener">'+escq(l.lk[k].t)+' →</a>';}
     h+='</div></div>';}
-  h+='<a class="m2-ext" href="'+escq(lawUrl(l.law))+'" target="_blank" rel="noopener">법제처에서 원문 보기 →</a>';
+  var _jm=monMonth(l.law);
+  h+='<div class="m2-acts">';
+  if(_jm)h+='<button type="button" class="m2-jump" data-law="'+escq(l.law)+'">이 법령의 활용도 분석 보기 →</button>';
+  h+='<a class="m2-ext" href="'+escq(lawUrl(l.law))+'" target="_blank" rel="noopener">법제처에서 원문 보기 →</a></div>';
   mb2.innerHTML=h;openM(modal2);}
+
+// ★2026-08-08: 우대 팝업 → 활용도 화면 점프 (같은 HTML 내 탭 전환 + 검색 조건 주입)
+function monMonth(name){var t=(name||'').replace(/\s/g,''),best=null;
+  for(var i=0;i<MLAWS.length;i++){var o=MLAWS[i];
+    if((o.law||'').replace(/\s/g,'')!==t)continue;
+    if(!best||(o.month||'')>best)best=o.month;}
+  return best;}
+function jumpMonitor(name){var mo=monMonth(name);if(!mo)return;
+  closeModal2();closeModal();
+  var tb=document.querySelector('.tab[data-view="monitor"]');if(tb)tb.click();
+  scope.value='law';qm.value=name;if(minf)minf.value='';
+  if(mfrom.value>mo)mfrom.value=mo;          // 기본 범위(최근 2개월) 밖이면 자동 확장
+  if(mto.value<mo)mto.value=mo;
+  filterM();window.scrollTo({top:0,behavior:'smooth'});}
+mb2.addEventListener('click',function(e){var b=e.target.closest('.m2-jump');if(b)jumpMonitor(b.dataset.law||'');});
 
 gm.addEventListener('click',function(e){var t=e.target.closest('.title-btn,.detail-link');if(!t)return;var c=t.closest('.card');if(c)openMonitor(+c.dataset.i);});
 gr.addEventListener('click',function(e){var t=e.target.closest('.title-btn,.detail-link');if(!t)return;var c=t.closest('.card');if(c)openCert(+c.dataset.i);});
