@@ -598,6 +598,9 @@ background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15
 .seal-stamp::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--go);animation:blink 1.8s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.seal-stamp::before{animation:none}}
+.doc-intro{max-width:900px;margin:0 0 3px;font-size:14.5px;color:#3F4A58;line-height:1.65;word-break:keep-all}
+.doc-guide{max-width:900px;margin:0 0 16px;font-size:13px;color:#7C8798;line-height:1.7;word-break:keep-all}
+.doc-guide b{color:var(--navy);font-weight:600}
 .tabs{display:flex;gap:10px;row-gap:10px;flex-wrap:wrap;padding-bottom:16px}
 .tab{appearance:none;border:2px solid var(--line);background:#fff;border-radius:999px;padding:12px 19px;font-size:14.5px;white-space:nowrap;flex:0 0 auto;font-weight:800;color:var(--mut);display:inline-flex;align-items:center;gap:9px;cursor:pointer;transition:border-color .15s,color .15s,box-shadow .15s}
 .tab::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--line);flex:none;transition:background .15s,box-shadow .15s}
@@ -780,7 +783,9 @@ footer{border-top:1.5px solid var(--line);margin-top:20px;background:#fff}
 footer .wrap{padding:20px 22px 34px;font-size:12.5px;color:var(--mut);line-height:1.9}
 footer b{color:var(--navy)}
 @media (max-width:760px){
-  .doc-head{flex-direction:column;align-items:flex-start;gap:12px}
+  .doc-head{flex-direction:column;align-items:flex-start;gap:12px;padding-bottom:12px}
+  .doc-guide{display:none}
+  .doc-intro{font-size:13.5px;margin-bottom:14px}
   .tabs{width:100%;overflow-x:auto}
   .tab{white-space:nowrap;font-size:13.5px;padding:11px 17px}
   #grid-m .card{padding-left:40px}
@@ -860,6 +865,8 @@ footer b{color:var(--navy)}
     <span class="logo"><span class="doc-sub">법령 → 자격증 → 채용, 한 노선으로</span>자격증 <em>법령 네비게이터</em></span>
     <span class="seal-stamp" aria-hidden="true">매일 새벽 자동 분석 운행 중</span>
   </div>
+  <p class="doc-intro">국가기술자격과 관련된 법령을 매일 새벽 전수 분석해 공개합니다.</p>
+  <p class="doc-guide">아래 네 개 노선 중 원하는 곳에서 출발하세요 — 오늘의 운행 현황은 <b>총괄현황</b>, 법령별 분석은 <b>활용도</b>, 자격증에서 출발하려면 <b>우대사항</b>, 한 달 요약은 <b>이슈브리핑</b>입니다.</p>
   <nav class="tabs">
     <button type="button" class="tab active" data-view="ov">법령 모니터링 총괄현황</button>
     <button type="button" class="tab" data-view="monitor">법령 제개정에 따른 자격증 활용도 모니터링</button>
