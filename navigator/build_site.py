@@ -571,6 +571,13 @@ button{font-family:inherit;cursor:pointer}
 .brief-pdf{width:100%;height:min(78vh,900px);border:1px solid var(--line);border-radius:12px;background:#fff}
 .brief-cap{margin-top:10px;font-size:13px;color:var(--mut)}
 .brief-empty{padding:44px 10px;text-align:center;color:var(--mut);font-size:15px}
+/* ★2026-08-09 은은한 마감 — 팝업 떠오름 · 카드 그림자 · 모션 민감 존중 */
+.modal.open .modal-backdrop{animation:qfade .18s ease-out}
+.modal.open .modal-panel{animation:qrise .2s ease-out}
+@keyframes qfade{from{opacity:0}to{opacity:1}}
+@keyframes qrise{from{opacity:0;transform:translateX(-50%) translateY(14px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+#grid-m .card,.rcard{transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+@media (prefers-reduced-motion:reduce){.modal.open .modal-backdrop,.modal.open .modal-panel{animation:none}#grid-m .card,.rcard{transition:none}}
 .fab{position:fixed;right:18px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:60}
 .fab-btn{width:46px;height:46px;border-radius:50%;border:1px solid #D8DFE8;background:#fff;color:#2E4A6B;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,70,.18)}
 .fab-btn:hover{background:#F2F6FB}
@@ -640,7 +647,7 @@ select option{color:var(--ink);background:#fff}
 main .wrap{padding:26px 22px 60px}
 #grid-m{display:grid;gap:13px}
 #grid-m .card{position:relative;background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:18px 20px 16px 46px;transition:border-color .15s, transform .15s}
-#grid-m .card:hover{border-color:var(--navy);transform:translateX(3px)}
+#grid-m .card:hover{border-color:var(--navy);transform:translateX(3px);box-shadow:0 6px 18px rgba(31,53,87,.10)}
 #grid-m .card::before{content:"";position:absolute;left:22px;top:16px;bottom:16px;width:5px;border-radius:99px;background:var(--l2)}
 #grid-m .card::after{content:"";position:absolute;box-sizing:border-box;left:16.5px;top:22px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--l2)}
 .c-date{display:inline-flex;align-items:baseline;gap:6px;font-size:12.5px;font-weight:800;color:var(--navy);background:#EEF3FB;border-radius:8px;padding:3px 10px;font-variant-numeric:tabular-nums;margin-bottom:7px}
@@ -663,7 +670,7 @@ main .wrap{padding:26px 22px 60px}
 /* 화면2: 역명판 카드 */
 .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:13px}
 .rcard{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s,transform .15s}
-.rcard:hover{border-color:var(--navy);transform:translateY(-2px)}
+.rcard:hover{border-color:var(--navy);transform:translateY(-2px);box-shadow:0 8px 20px rgba(31,53,87,.12)}
 .rcard .cert{font-size:16px;font-weight:800;line-height:1.4;letter-spacing:-.01em;display:flex;gap:9px}
 .rcard .cert::before{content:"";flex:none;margin-top:5px;width:11px;height:11px;border-radius:50%;background:#fff;border:3.5px solid var(--navy)}
 .rcard .card-foot{margin-top:auto;display:flex;flex-direction:column;gap:9px}
@@ -1212,6 +1219,21 @@ function openUse(ei){var l=RENTRIES[ei];if(!l)return;var i=monIndex(l.law);if(i<
 mb2.addEventListener('click',function(e){
   var b=e.target.closest('.m2-jump');if(b){openUse(+b.dataset.ei);return;}
   var k=e.target.closest('.m2-back');if(k){openLaw(+k.dataset.ei);return;}});
+
+// ★2026-08-09: 신뢰 카운터 카운트업(첫 진입 1회) — 모션 민감 설정 시 생략
+(function(){
+ if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ document.querySelectorAll('.ov-trust b').forEach(function(b){
+   var m=(b.textContent||'').match(/^([\d,]+)(.*)$/);if(!m)return;
+   var n=parseInt(m[1].replace(/,/g,''),10);if(!n||n<10)return;   // '0건' 배지는 그대로
+   var suf=m[2]||'',t0=null,D=900;
+   b.textContent='0'+suf;
+   requestAnimationFrame(function step(ts){if(t0===null)t0=ts;
+     var p=Math.min(1,(ts-t0)/D);p=1-Math.pow(1-p,3);
+     b.textContent=Math.round(n*p).toLocaleString('ko-KR')+suf;
+     if(p<1)requestAnimationFrame(step);});
+ });
+})();
 
 gm.addEventListener('click',function(e){var t=e.target.closest('.title-btn,.detail-link');if(!t)return;var c=t.closest('.card');if(c)openMonitor(+c.dataset.i);});
 gr.addEventListener('click',function(e){var t=e.target.closest('.title-btn,.detail-link');if(!t)return;var c=t.closest('.card');if(c)openCert(+c.dataset.i);});
