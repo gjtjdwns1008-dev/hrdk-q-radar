@@ -13,9 +13,9 @@ import os, sys, csv, time, requests
 OUT_DIR = "sheet_backup_out"
 
 def notify(subject, body):
-    url = os.environ.get("WEBHOOK_URL", "").strip()
+    url = os.environ.get("BACKUP_WEBHOOK_URL", "").strip()
     if not url:
-        print("· WEBHOOK_URL 미설정 — 통지 생략(안전핀)")
+        print("· BACKUP_WEBHOOK_URL 미설정 — 통지 생략(안전핀)")
         return
     try:
         requests.post(url, data={"subject": subject, "body": body}, timeout=30)
