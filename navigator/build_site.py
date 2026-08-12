@@ -542,7 +542,7 @@ def main():
 
 PAGE = r"""<!DOCTYPE html>
 <html lang="ko"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>자격증 법령 네비게이터 · HRDK</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -568,7 +568,7 @@ button{font-family:inherit;cursor:pointer}
 .brief-page{width:100%;display:block;border:1px solid var(--line);border-radius:10px;margin:0 0 12px;box-shadow:0 1px 6px rgba(0,0,0,.06)}
 .brief-dl{display:inline-block;background:#2e4a6b;color:#fff;padding:7px 14px;border-radius:8px;font-weight:700;text-decoration:none;margin-right:8px}
 .brief-dl:hover{background:#3d5a80}
-.brief-pdf{width:100%;height:min(78vh,900px);border:1px solid var(--line);border-radius:12px;background:#fff}
+.brief-pdf{width:100%;height:min(78vh,900px);height:min(78dvh,900px);border:1px solid var(--line);border-radius:12px;background:#fff}
 .brief-cap{margin-top:10px;font-size:13px;color:var(--mut)}
 .brief-empty{padding:44px 10px;text-align:center;color:var(--mut);font-size:15px}
 /* ★2026-08-09 은은한 마감 — 팝업 떠오름 · 카드 그림자 · 모션 민감 존중 */
@@ -578,16 +578,16 @@ button{font-family:inherit;cursor:pointer}
 @keyframes qrise{from{opacity:0;transform:translateX(-50%) translateY(14px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 #grid-m .card,.rcard{transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
 @media (prefers-reduced-motion:reduce){.modal.open .modal-backdrop,.modal.open .modal-panel{animation:none}#grid-m .card,.rcard{transition:none}}
-.fab{position:fixed;right:18px;bottom:22px;display:flex;flex-direction:column;gap:10px;z-index:60}
+.fab{position:fixed;right:18px;bottom:calc(22px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:10px;z-index:60}
 .fab-btn{width:46px;height:46px;border-radius:50%;border:1px solid #D8DFE8;background:#fff;color:#2E4A6B;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,70,.18)}
 .fab-btn:hover{background:#F2F6FB}
 .fab-top{background:#2E4A6B;color:#fff;border-color:#2E4A6B}
 .fab-top:hover{background:#3D5A80}
-.fab-menu{position:fixed;right:74px;bottom:22px;background:#fff;border:1px solid #D8DFE8;border-radius:14px;box-shadow:0 10px 30px rgba(20,40,70,.2);padding:8px;z-index:61;display:flex;flex-direction:column;gap:4px}
+.fab-menu{position:fixed;right:74px;bottom:calc(22px + env(safe-area-inset-bottom,0px));background:#fff;border:1px solid #D8DFE8;border-radius:14px;box-shadow:0 10px 30px rgba(20,40,70,.2);padding:8px;z-index:61;display:flex;flex-direction:column;gap:4px}
 .fab-mi{border:0;background:#fff;text-align:left;padding:9px 14px;border-radius:9px;font-size:13.5px;font-weight:700;color:#2E4A6B;cursor:pointer;white-space:nowrap}
 .fab-mi:hover{background:#EEF3F9}
-.fab-toast{position:fixed;right:18px;bottom:82px;background:#1F3557;color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;z-index:62;box-shadow:0 6px 18px rgba(0,0,0,.25)}
-@media(max-width:707px){.fab{right:12px;bottom:14px}.fab-menu{right:64px;bottom:14px}}
+.fab-toast{position:fixed;right:18px;bottom:calc(82px + env(safe-area-inset-bottom,0px));background:#1F3557;color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;z-index:62;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+@media(max-width:707px){.fab{right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px))}.fab-menu{right:64px;bottom:calc(14px + env(safe-area-inset-bottom,0px))}}
 .gov-bar{background:#fff;border-bottom:1px solid var(--line)}
 .gov-bar .wrap{display:flex;justify-content:space-between;gap:14px;padding:8px 22px;font-size:12px;color:var(--mut)}
 .gov-bar b{color:var(--navy);font-weight:700}
@@ -722,7 +722,7 @@ border:1.5px solid #F2DFAE;border-radius:16px;padding:14px 18px;margin-bottom:16
 .modal{position:fixed;inset:0;display:none;z-index:50}
 .modal.open{display:block}
 .modal-backdrop{position:absolute;inset:0;background:rgba(16,24,40,.45)}
-.modal-panel{position:absolute;top:4vh;left:50%;transform:translateX(-50%);width:min(760px,94vw);max-height:92vh;overflow-y:auto;
+.modal-panel{position:absolute;top:4vh;left:50%;transform:translateX(-50%);width:min(760px,94vw);max-height:92vh;max-height:calc(92dvh - env(safe-area-inset-bottom,0px));overflow-y:auto;
 background:#fff;border-radius:22px;padding:32px 34px 28px;scrollbar-width:thin;scrollbar-color:#AEBBD0 transparent}
 .modal-panel::-webkit-scrollbar{width:11px}
 .modal-panel::-webkit-scrollbar-track{background:transparent;margin:40px 0}
@@ -1122,9 +1122,24 @@ qr.addEventListener('input',filterR);filterR();
 var modal=document.getElementById('modal'),mb=document.getElementById('m-body');
 var modal2=document.getElementById('modal2'),mb2=document.getElementById('m2-body');
 function sec(t,inner){return inner?'<div class="m-sec"><h4>'+t+'</h4>'+inner+'</div>':'';}
-function openM(modalEl){modalEl.classList.add('open');modalEl.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';var p=modalEl.querySelector('.modal-panel');if(p)p.scrollTop=0;}
-function closeModal(){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!modal2.classList.contains('open'))document.body.style.overflow='';}
-function closeModal2(){modal2.classList.remove('open');modal2.setAttribute('aria-hidden','true');if(!modal.classList.contains('open'))document.body.style.overflow='';}
+// ★2026-08-12: 모바일 뒤로가기 = 팝업 닫기 (터치 기기 한정 스위치 — PC 동작 불변)
+var MOB_BACK = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches
+                  && window.history && history.pushState);
+var POPGUARD = false;
+function openM(modalEl){
+  if(MOB_BACK && !modalEl.classList.contains('open')) history.pushState({qrModal:1},'');modalEl.classList.add('open');modalEl.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';var p=modalEl.querySelector('.modal-panel');if(p)p.scrollTop=0;}
+function closeModal(){
+  if(MOB_BACK && !POPGUARD && modal.classList.contains('open')){history.back();return;}
+  modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!modal2.classList.contains('open'))document.body.style.overflow='';}
+function closeModal2(){
+  if(MOB_BACK && !POPGUARD && modal2.classList.contains('open')){history.back();return;}
+  modal2.classList.remove('open');modal2.setAttribute('aria-hidden','true');if(!modal.classList.contains('open'))document.body.style.overflow='';}
+if(MOB_BACK) window.addEventListener('popstate', function(){
+  POPGUARD = true;
+  if(modal2.classList.contains('open')) closeModal2();
+  else if(modal.classList.contains('open')) closeModal();
+  POPGUARD = false;
+});
 
 // 종목 미상 우대법령 팝업
 function openNocert(){
