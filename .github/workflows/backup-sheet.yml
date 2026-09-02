@@ -1,13 +1,17 @@
-# 마스터 DB(구글시트) 주간 자동 백업 (★2026-08-10 신설)
-# · 매주 월요일 07:00 KST — 새벽 분석(00:20~) 및 06:00 재빌드 종료 후
-# · 저장: 비공개 아티팩트 90일 보존(자동 만료 = 보존 관리 불필요)
-# · 통지: 완료/실패 메일(웹훅) — 파일 대신 실행 페이지 링크
+# 마스터 DB(구글시트) 주간 자동 백업 (v2: 격자 재시도 탑재, 2026-08-27)
+# · 1슬롯 월 07:00 KST + 2슬롯 월 10:00 KST (1슬롯 성공 시 2슬롯은 조용히 통과)
+# · 스크립트 내부: 접속 5회 백오프 + 탭 3회 재시도
 name: Weekly sheet backup (Q-RADAR)
 
 on:
   schedule:
-    - cron: "0 22 * * 0"     # 일요일 22:00 UTC = 월요일 07:00 KST
-  workflow_dispatch: {}       # 수동 실행(첫 검증용)
+    - cron: "0 22 * * 0"     # 월 07:00 KST (1차)
+    - cron: "0 1 * * 1"      # 월 10:00 KST (격자 2차 — 이미 성공 시 통과)
+  workflow_dispatch: {}       # 수동 실행 (성공 여부와 무관하게 항상 수행)
+
+permissions:
+  contents: read
+  actions: read               # 오늘 성공 실행 조회용
 
 concurrency:
   group: qradar-backup
@@ -16,7 +20,7 @@ concurrency:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
@@ -26,14 +30,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 의존성 설치 (백업은 경량 — 시트 접근분만)
+      - name: 의존성 설치
         run: pip install --quiet gspread oauth2client requests
 
-      - name: 시트 전 탭 CSV 백업 + 통지
+      - name: 시트 전 탭 CSV 백업 (3중 방어) + 통지
         env:
           GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python pipeline/backup_sheet_ci.py
 
       - name: 백업 아티팩트 업로드 (90일 보존)
@@ -43,4 +48,4 @@ jobs:
           name: sheet-backup-${{ github.run_id }}
           path: sheet_backup_out/
           retention-days: 90
-          if-no-files-found: error
+          if-no-files-found: ignore
