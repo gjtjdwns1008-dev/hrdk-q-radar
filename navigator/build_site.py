@@ -514,7 +514,7 @@ def build():
       "@@M_OPTS@@":m_opts, "@@M_DEF_FROM@@":def_from, "@@M_DEF_TO@@":def_to,
       "@@M_TOTAL_CERTS@@":str(m_total_certs), "@@M_CARDS@@":m_cards,
       "@@R_CARDS@@":r_cards, "@@R_TOTAL@@":str(r_total), "@@NOCERT@@":nocert_banner, "@@NOCERT_JSON@@":nocert_json,
-      "@@BUILT_AT@@":datetime.datetime.now().strftime("%Y.%m.%d"),
+      "@@BUILT_AT@@":(datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%Y.%m.%d"),  # ★2026-09-04 KST 보정(249행 관례와 통일) — UTC 러너의 새벽 빌드가 전날로 각인되던 문제
       "@@MLAWS@@":json.dumps(mdata, ensure_ascii=False).replace("</","<\\/"),
       "@@RCERTS@@":json.dumps(rcerts, ensure_ascii=False).replace("</","<\\/"),
       "@@RENTRIES@@":json.dumps(rentries, ensure_ascii=False).replace("</","<\\/"),
