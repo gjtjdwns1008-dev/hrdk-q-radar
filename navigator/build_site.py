@@ -134,7 +134,18 @@ def load_ledger():
         _LEDGER = pd.read_excel(lx, sheet_name=sh).fillna("").to_dict("records")
         return _LEDGER
     gc = _client(os.environ["QRADAR_SA_JSON"])
-    _LEDGER = gc.open_by_key(_sheet_key(os.environ["QRADAR_SHEET_ID"])).worksheet(ws_name).get_all_records()
+    # ★2026-09-05: 구글 503 일시 장애 대응 — 접속 5회 지수 백오프 (백업 1차 방어와 동일)
+    import time as _t
+    _wait = 20
+    for _n in range(1, 6):
+        try:
+            _LEDGER = gc.open_by_key(_sheet_key(os.environ["QRADAR_SHEET_ID"])).worksheet(ws_name).get_all_records()
+            if _n > 1: print(f"· 시트 접속 성공 ({_n}차 시도)")
+            break
+        except Exception as _e:
+            print(f"  ⚠ 시트 접속 {_n}차 실패 — {_e}")
+            if _n == 5: raise
+            _t.sleep(_wait); _wait *= 2
     return _LEDGER
 
 def _nospace(s): return re.sub(r"\s+", "", str(s or ""))
@@ -900,7 +911,7 @@ footer b{color:var(--navy)}
   <div class="ov-hero">
     <h2 class="ov-h1">법령 모니터링 총괄현황</h2>
     <p class="ov-lead">매일 새벽 수집된 법령을 날짜별로 한눈에. 수치를 누르면 그날의 법령 목록과 활용도·우대사항 분석까지 이어집니다.</p>
-    <span class="ov-fresh">🛰️ 매일 새벽 자동 수집 · 최근 수집 성공 <b>@@OVFRESH@@</b></span>
+    <span class="ov-fresh">🛰️ 매일 새벽 자동 수집 · 시행일자 기준 반영 완료 <b>@@OVFRESH@@</b></span>
   </div>
   <div class="ov-strip">
     <div class="ov-card fill"><h3>주간 수집 추이 <span>최근 8주 · 검토 법령 수</span></h3><div class="ov-spark" id="ov-spark"></div></div>
