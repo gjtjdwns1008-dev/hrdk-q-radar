@@ -37,7 +37,6 @@ jobs:
         env:
           GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python pipeline/backup_sheet_ci.py
 
