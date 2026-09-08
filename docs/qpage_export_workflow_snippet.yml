@@ -1,0 +1,20 @@
+# ══════════════════════════════════════════════════════════════════
+# Q-Page 연계 pref_export.json 게시 스텝 — build-navigator.yml 삽입용 (실명 최종본)
+#
+# ■ 삽입 위치: '사이트 생성' 스텝 뒤 ~ '결과물(dist) 업로드' 스텝 앞.
+#   러너가 dist/pref_export.json 을 만들면 기존 업로드·Pages 배포에 그대로 실려
+#   고정 URL(…/hrdk-q-radar/pref_export.json)로 게시된다(일 4회 편승, 규격 §2.1).
+# ■ 커밋 시점: Phase 2(심사 후) — 이 스텝이 병합·커밋되는 순간 게시가 시작된다.
+# ■ 안전 특성: 러너는 항상 exit 0(본 열차 우선) · 실패 시 keep-last-good ·
+#   시트 접속은 읽기 전용 · Job Summary에 §3 검산 리포트 자동 기록
+#   → 성공 런의 Summary 캡처 = Q-Page 인수 증빙.
+# ══════════════════════════════════════════════════════════════════
+
+      - name: Q-Page 연계 JSON 생성·게시 (pref_export)
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          QPAGE_BASE_YEAR: "2024"   # 명찰(qpage-master) 세대 — 화면 연도 갱신 시 이 값만 교체
+        run: |
+          pip install gspread google-auth
+          python -m migrate_tool.pref_export.run_export_github --out dist/pref_export.json
