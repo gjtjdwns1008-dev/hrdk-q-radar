@@ -28,7 +28,8 @@ def build_summary_md(status: str, snap, problems: list[str],
     L.append("")
     L.append(f"**상태: {status}**")
     if snap is not None:
-        L.append(f"asof `{snap.asof}` · generated `{snap.generated}`{f" · 기준연도(명찰 세대) `{base_year}`" if base_year else ""}")
+        year_part = f" · 기준연도(명찰 세대) `{base_year}`" if base_year else ""
+        L.append(f"asof `{snap.asof}` · generated `{snap.generated}`{year_part}")
         r = snap.report
         L += ["", "| 항목 | 값 |", "|---|---|"]
         L.append(f"| 대장 확정 레코드(원자화) | {r.raw_rows} (완전중복 제거 {r.dup_dropped}) |")
