@@ -57,6 +57,15 @@ jobs:
           QRADAR_SHEET_ID: ${{ secrets.GOOGLE_SHEET_URL }}
           # R_SCOPE: "all"  # 화면2를 v1처럼 '관련 법령 전체'로 넓히려면 주석 해제
         run: python navigator/build_site.py
+
+      - name: Q-Page 연계 JSON 생성·게시 (pref_export · Phase 2)
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          QPAGE_BASE_YEAR: "2024"   # 명찰(qpage-master) 세대 — Q-Page 화면 연도 갱신 시 이 값만 교체
+        run: |
+          pip install --quiet google-auth
+          python -m migrate_tool.pref_export.run_export_github --out dist/pref_export.json
       - name: 결과물(dist) 업로드
         uses: actions/upload-pages-artifact@v3
         with:
