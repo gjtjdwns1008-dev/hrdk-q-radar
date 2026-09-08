@@ -1,0 +1,38 @@
+# ══════════════════════════════════════════════════════════════════
+# Q-Page 내보내기 — 게시 없는 시험 실행 (수동 버튼 전용)
+#
+# ■ 용도: Phase 2 전에 Secrets 인증·집계·검산·Job Summary 렌더링을 실전 환경에서
+#   확인. Pages 배포 스텝이 없으므로 고정 URL은 그대로 비어 있다(게시 아님 = §5 준수).
+# ■ 사용법: 이 파일을 .github/workflows/qpage-export-test.yml 로 커밋하면
+#   Actions 탭에 수동 실행 버튼이 생긴다. 자동 실행(cron/push 트리거) 없음.
+# ■ 산출물: 런 아티팩트 'pref-export-preview' (검토 후 자동 만료).
+# ══════════════════════════════════════════════════════════════════
+name: "Q-Page export test (게시 없음)"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Q-Page 연계 JSON 시험 생성 (게시 없음)
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          QPAGE_BASE_YEAR: "2024"
+        run: |
+          pip install gspread google-auth
+          python -m migrate_tool.pref_export.run_export_github --out preview/pref_export.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pref-export-preview
+          path: preview/
+          if-no-files-found: warn
