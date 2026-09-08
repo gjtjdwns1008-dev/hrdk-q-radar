@@ -65,7 +65,8 @@ jobs:
           QPAGE_BASE_YEAR: "2024"   # 명찰(qpage-master) 세대 — Q-Page 화면 연도 갱신 시 이 값만 교체
         run: |
           pip install --quiet google-auth
-          python -m migrate_tool.pref_export.run_export_github --out dist/pref_export.json
+          python -m migrate_tool.pref_export.run_export_github --out dist/pref_export.json \
+            || echo "::warning::pref_export 스텝 실패(rc=$?) — 게시 생략, 네비게이터 배포는 계속"
       - name: 결과물(dist) 업로드
         uses: actions/upload-pages-artifact@v3
         with:
