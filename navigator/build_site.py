@@ -431,10 +431,77 @@ def r_build(rows):
     for e in entries: e.pop("_k", None)                 # ★내부 정렬키 제거
     return certs_out, entries, len(cert_map), nocert_uniq
 
+# ───────── 종목 딥링크 (★2026-09-09 · 규격 v1.3.1 §2 / Q-Page 요청 항목 B) ─────────
+# 카드에 Q-Net 종목코드를 부여해 #/q/{코드} 진입을 가능하게 한다.
+# 코드 출처 = 연계 패키지의 번역 사전(codemap, Q-Page 종목마스터 파생 · 부속서 A-5).
+# 실패 시 코드 없이 진행 — 딥링크만 비활성화되고 화면·기능은 종전과 동일(격리).
+DEEPLINK_YEAR = int(os.environ.get("QPAGE_BASE_YEAR", "2024"))   # 명찰 세대와 동일 기본값
+
+def load_cert_codes():
+    """{정규화 종목명: 종목코드} 사전과 사전 파일 경로를 돌려준다. 실패 시 ({}, None)."""
+    try:
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from migrate_tool.pref_export import codemap          # 단일 소스(연도 세대 규칙 포함)
+        name2code, _ = codemap.load_maps(year=DEEPLINK_YEAR)
+        src = next((c for c in codemap.DEFAULT_CANDIDATES if c.exists()), None)
+        return name2code, src
+    except Exception as e:
+        print(f"  ⚠ 딥링크 코드 사전 로드 실패 → 딥링크 비활성(화면 영향 없음): {e}")
+        return {}, None
+
+def attach_codes(certs_out, name2code):
+    """certs_out 각 항목에 code 필드 부여(찾지 못하면 빈 문자열)."""
+    if not name2code:
+        for d in certs_out: d["code"] = ""
+        return 0
+    n = 0
+    for d in certs_out:
+        code = name2code.get(re.sub(r"[\s·]", "", str(d.get("cert") or "")), "")
+        d["code"] = code
+        if code: n += 1
+    return n
+
+def check_code_sync(certs_out, dist_dir, src_path):
+    """대조 검증(외부 호출 없음 · Q-Page 회신 2026-09-09 §3 이행).
+
+    ① 카드 코드 집합 ↔ 같은 빌드가 만든 pref_export.json items 키 대조
+    ② 사전 파일이 오래되면 경고 — 양쪽 산출물이 같은 사전 파생이라
+       '통째로 낡은 사전'은 ①로 잡히지 않는 사각지대이므로 별도 감시.
+    """
+    codes = {d["code"] for d in certs_out if d.get("code")}
+    print(f"  · 딥링크 코드 부여: {len(codes)}/{len(certs_out)}종목 (기준연도 {DEEPLINK_YEAR})")
+    blank = [d["cert"] for d in certs_out if not d.get("code")]
+    if blank:
+        print(f"  ⚠ 코드 미부여 {len(blank)}종목(딥링크 없음): {', '.join(blank[:10])}"
+              + (" …" if len(blank) > 10 else ""))
+    try:
+        with open(os.path.join(dist_dir, "pref_export.json"), encoding="utf-8") as f:
+            keys = set(json.load(f).get("items", {}).keys())
+        only_json = sorted(keys - codes)
+        if only_json:
+            print(f"  ⚠ pref_export.json에만 있는 코드 {len(only_json)}건: {', '.join(only_json[:10])}"
+                  + (" …" if len(only_json) > 10 else ""))
+        else:
+            print(f"  · 대조 검증 ✓ 카드 코드 ⊇ pref_export items({len(keys)}건)")
+    except FileNotFoundError:
+        print("  · 대조 검증 생략(pref_export.json 미생성 — 게시 스텝 이전이거나 실패)")
+    except Exception as e:
+        print(f"  ⚠ 대조 검증 실패(비치명): {e}")
+    try:
+        if src_path:
+            age = (datetime.datetime.now() - datetime.datetime.fromtimestamp(
+                os.path.getmtime(src_path))).days
+            if age > 400:
+                print(f"  ⚠ 종목코드 사전이 {age}일 경과 — 종목마스터 개정 반영이 누락됐을 수 있습니다"
+                      f" (build_codemap.py로 재생성 권장 · 부속서 A-5 연 1회).")
+    except Exception:
+        pass
+
 def r_card(d, i):
     sjb = '<span class="sjb-badge">⚠ 중대재해처벌법 관련</span>' if d["sjb"] else ""
     return f"""
-    <article class="card rcard" data-i="{i}">
+    <article class="card rcard" data-i="{i}" data-code="{esc(d.get('code') or '')}">
       <h3 class="cert"><button type="button" class="title-btn">{esc(d['cert'])}</button></h3>
       <div class="card-foot">
         <div class="foot-meta"><span class="lc">우대 법령 {d['law_count']}개</span>{sjb}</div>
@@ -461,6 +528,9 @@ def build():
     # radar
     rrows = load_radar()
     rcerts, rentries, r_total, nocert = r_build(rrows)
+    _name2code, _codemap_src = load_cert_codes()          # ★딥링크: 종목코드 부여
+    attach_codes(rcerts, _name2code)
+    globals()["_DEEPLINK_STATE"] = (rcerts, _codemap_src)  # main()의 대조 검증용
     rc_idx = {d["cert"]: i for i, d in enumerate(rcerts)}
     ovd, ovspark, ovtop, ovfresh, ovstat = build_ov(midx, rc_idx)
     r_cards = "\n".join(r_card(d,i) for i,d in enumerate(rcerts)) or '<p class="empty">자료가 없습니다.</p>'
@@ -549,6 +619,9 @@ def main():
     p = os.path.join(OUT_DIR, "index.html")
     open(p,"w",encoding="utf-8").write(out)
     print(f"✅ 생성: {p}  (법령 {nm}건 / 자격증 {nr}개[전체 {total}])")
+    _st = globals().get("_DEEPLINK_STATE")
+    if _st:
+        check_code_sync(_st[0], OUT_DIR, _st[1])
 
 
 PAGE = r"""<!DOCTYPE html>
@@ -1141,7 +1214,8 @@ function openM(modalEl){
   if(MOB_BACK && !modalEl.classList.contains('open')) history.pushState({qrModal:1},'');modalEl.classList.add('open');modalEl.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';var p=modalEl.querySelector('.modal-panel');if(p)p.scrollTop=0;}
 function closeModal(){
   if(MOB_BACK && !POPGUARD && modal.classList.contains('open')){history.back();return;}
-  modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!modal2.classList.contains('open'))document.body.style.overflow='';}
+  modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!modal2.classList.contains('open'))document.body.style.overflow='';
+  if(window.__qrClearHash)window.__qrClearHash();}
 function closeModal2(){
   if(MOB_BACK && !POPGUARD && modal2.classList.contains('open')){history.back();return;}
   modal2.classList.remove('open');modal2.setAttribute('aria-hidden','true');if(!modal.classList.contains('open'))document.body.style.overflow='';}
@@ -1208,7 +1282,7 @@ function openCert(i){var d=RCERTS[i];if(!d)return;
   }).join('');
   mb.innerHTML='<h2 class="m-cert">'+escq(d.cert)+'</h2>'
     +'<div class="m-pfs">'+pfs+'</div><div class="m-sec"><h4>이 자격증을 우대하는 법령 ('+(d.idx||[]).length+'건)</h4>'+laws+'</div>';
-  openM(modal);}
+  openM(modal); if(window.__qrSyncHash)window.__qrSyncHash(i);}
 // radar 법령 상세(2차)
 function trkBlock(k,code,name,desc,sub){return '<div class="trk"><div class="k">'+k+'</div><div class="v">'+escq(code)+(name?' · '+escq(name):'')+(sub?' <span class="sub">('+escq(sub)+')</span>':'')+'</div>'+(desc?'<div class="d">'+escq(desc)+'</div>':'')+'</div>';}
 function openLaw(ei){var l=RENTRIES[ei];if(!l)return;
@@ -1323,6 +1397,53 @@ function ovLawByIdx(i){var d=MLAWS[i];if(!d)return;mb2.innerHTML=monitorHTML(d);
   OVD.forEach(function(x){rows.push([x.d,x.g,x.t,x.r,x.p,Object.keys(x.b||{}).map(function(k){return k+' '+x.b[k];}).join(' \u00b7 ')]);});
   var blob=new Blob(['\ufeff'+rows.map(function(r){return r.join(',');}).join('\n')],{type:'text/csv'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='총괄현황.csv';a.click();});
+})();
+// ── 종목 딥링크 (★2026-09-09 · #/q/{종목코드}) ─────────────────
+// Q-Page 「전체 N건 자세히 보기」가 이 주소로 들어온다. 규격 v1.3.1 §2.
+// 미지 코드·미부여 종목은 오류 없이 우대사항 화면만 열어준다(폴백).
+(function(){
+ var RTAB=null; tabs.forEach(function(t){if(t.dataset.view==='radar')RTAB=t;});
+ if(!RTAB)return;
+ var byCode={}, byName={};
+ rcards.forEach(function(c){
+   var cd=c.dataset.code||''; if(cd)byCode[cd]=+c.dataset.i;
+   var nm=(RCERTS[+c.dataset.i]||{}).cert||'';
+   if(nm)byName[nm.replace(/[\s·]/g,'')]=+c.dataset.i;
+ });
+ function parseHash(){
+   var h=(location.hash||'').replace(/^#/,'');
+   var m=h.match(/^\/q\/([A-Za-z0-9]+)$/);          // #/q/1150
+   if(m)return {code:m[1]};
+   m=h.match(/^\/q\?name=(.+)$/);                    // #/q?name=전기기사 (보조 폴백)
+   if(m){try{return {name:decodeURIComponent(m[1])};}catch(e){return {name:m[1]};}}
+   return null;
+ }
+ function gotoRadar(){ if(!RTAB.classList.contains('active'))RTAB.click(); }
+ function apply(){
+   var q=parseHash(); if(!q)return;
+   gotoRadar();
+   var i=(q.code!=null)?byCode[q.code]:byName[String(q.name||'').replace(/[\s·]/g,'')];
+   if(i==null){                                      // 미지 코드 → 목록만 표시(정상 진입)
+     if(modal.classList.contains('open')){POPGUARD=true;closeModal();POPGUARD=false;}
+     return;
+   }
+   if(qr&&qr.value){qr.value='';filterR();}          // 검색 필터가 카드를 숨기고 있으면 해제
+   var card=rcards[i];
+   if(card){try{card.scrollIntoView({block:'center',behavior:'auto'});}catch(e){}}
+   openCert(i);
+ }
+ // 카드로 팝업을 열 때도 주소를 갱신 → 그 상태로 공유·즐겨찾기 가능
+ // (replaceState만 사용 — 모바일 뒤로가기=팝업닫기 로직의 히스토리와 충돌 방지)
+ window.__qrSyncHash=function(i){
+   var c=rcards[i]; if(!c)return; var cd=c.dataset.code||'';
+   if(cd&&history.replaceState)history.replaceState(null,'','#/q/'+cd);
+ };
+ window.__qrClearHash=function(){
+   if(location.hash.indexOf('#/q')===0&&history.replaceState)
+     history.replaceState(null,'',location.pathname+location.search);
+ };
+ window.addEventListener('hashchange',apply);
+ apply();                                            // 첫 진입·새로고침(F5) 처리
 })();
 </script></body></html>
 """
