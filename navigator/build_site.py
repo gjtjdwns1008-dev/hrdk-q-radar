@@ -683,12 +683,14 @@ header.site .wrap{padding-top:26px}
 .logo em{font-style:normal;color:var(--navy)}
 .logo .doc-sub{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--mut);letter-spacing:.06em;margin-bottom:7px}
 .logo .doc-sub::before{content:"";width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid var(--navy)}
-.seal-stamp{flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--go);
-background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15px;line-height:1.2}
-.seal-stamp br{display:none}
-.seal-stamp::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--go);animation:blink 1.8s ease-in-out infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
-@media (prefers-reduced-motion:reduce){.seal-stamp::before{animation:none}}
+/* ★2026-09-09 자매 서비스(Q-Page) 바로가기 — 종전 가동 배지(seal-stamp) 자리.
+   가동 표기는 상단 gov-bar 문구로 통합해 중복 제거. */
+.qpage-link{flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--go);
+background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15px;line-height:1.2;
+text-decoration:none;transition:background .15s,border-color .15s}
+.qpage-link:hover,.qpage-link:focus-visible{background:#DCF3E7;border-color:#8FDCBB}
+.qpage-link .qp-ext{font-weight:800}
+@media (max-width:640px){.qpage-link{font-size:11.5px;padding:7px 12px}}
 .doc-intro{max-width:900px;margin:0 0 3px;font-size:14.5px;color:#3F4A58;line-height:1.65;word-break:keep-all}
 .doc-guide{max-width:900px;margin:0 0 16px;font-size:13px;color:#7C8798;line-height:1.7;word-break:keep-all}
 .doc-guide b{color:var(--navy);font-weight:600}
@@ -760,6 +762,7 @@ main .wrap{padding:26px 22px 60px}
 .rcard .card-foot{margin-top:auto;display:flex;flex-direction:column;gap:9px}
 .foot-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .lc{font-size:12px;font-weight:700;color:var(--navy);background:#EEF3FB;border-radius:999px;padding:3px 10px}
+.gb-live{color:var(--go);font-weight:800}
 .sjb-badge{font-size:11px;font-weight:700;color:var(--l1);background:#FBEDEA;border-radius:999px;padding:3px 9px}
 .rcard .detail-link{background:none;border:1.5px solid var(--line);color:var(--navy);width:100%;border-radius:12px}
 .rcard .detail-link:hover{border-color:var(--navy);background:#EEF3FB}
@@ -950,11 +953,12 @@ footer b{color:var(--navy)}
 }
 </style>
 </head><body>
-<div class="gov-bar"><div class="wrap"><b>한국산업인력공단</b><span>국가기술자격 × 국가법령정보센터</span><span>@@BUILT_AT@@ 발행 · 매일 새벽 자동 갱신</span></div></div>
+<div class="gov-bar"><div class="wrap"><b>한국산업인력공단</b><span>국가기술자격 × 국가법령정보센터</span><span>@@BUILT_AT@@ 발행 · <b class="gb-live">매일 새벽 자동 분석 갱신 중</b></span></div></div>
 <header class="site"><div class="wrap">
   <div class="doc-head">
     <span class="logo"><span class="doc-sub">법령 → 자격증 → 채용, 한 노선으로</span>자격증 <em>법령 네비게이터</em></span>
-    <span class="seal-stamp" aria-hidden="true">매일 새벽 자동 분석 운행 중</span>
+    <a class="qpage-link" href="https://gjtjdwns1008-dev.github.io/hrdk-q-page/" target="_blank" rel="noopener"
+       title="국가기술자격 종목별 응시·취득·취업 통계 (새 창)">종목별 통계 한눈에 보기 — Q-Page <span class="qp-ext">↗</span></a>
   </div>
   <p class="doc-intro">국가기술자격과 관련된 법령을 매일 새벽 전수 분석해 공개합니다.</p>
   <p class="doc-guide">아래 네 개 노선 중 원하는 곳에서 출발하세요 — 오늘의 운행 현황은 <b>총괄현황</b>, 법령별 분석은 <b>활용도</b>, 자격증에서 출발하려면 <b>우대사항</b>, 한 달 요약은 <b>이슈브리핑</b>입니다.</p>
