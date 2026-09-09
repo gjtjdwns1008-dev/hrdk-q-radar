@@ -683,6 +683,9 @@ header.site .wrap{padding-top:26px}
 .logo em{font-style:normal;color:var(--navy)}
 .logo .doc-sub{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--mut);letter-spacing:.06em;margin-bottom:7px}
 .logo .doc-sub::before{content:"";width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid var(--navy)}
+.qpage-box{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.qpage-ask{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:-.2px}
+@media (max-width:640px){.qpage-box{align-items:flex-start}.qpage-ask{font-size:11.5px}}
 /* ★2026-09-09 자매 서비스(Q-Page) 바로가기 — 종전 가동 배지(seal-stamp) 자리.
    가동 표기는 상단 gov-bar 문구로 통합해 중복 제거. */
 .qpage-link{flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--go);
@@ -957,8 +960,11 @@ footer b{color:var(--navy)}
 <header class="site"><div class="wrap">
   <div class="doc-head">
     <span class="logo"><span class="doc-sub">법령 → 자격증 → 채용, 한 노선으로</span>자격증 <em>법령 네비게이터</em></span>
-    <a class="qpage-link" href="https://gjtjdwns1008-dev.github.io/hrdk-q-page/" target="_blank" rel="noopener"
-       title="국가기술자격 종목별 응시·취득·취업 통계 (새 창)">종목별 통계 한눈에 보기 — Q-Page <span class="qp-ext">↗</span></a>
+    <span class="qpage-box">
+      <span class="qpage-ask">국가기술자격 통계가 궁금하다면?</span>
+      <a class="qpage-link" href="https://gjtjdwns1008-dev.github.io/hrdk-q-page/" target="_blank" rel="noopener"
+         title="국가기술자격 종목별 응시·취득·취업 통계 (새 창)">종목별 통계 한눈에 보기 — Q-Page <span class="qp-ext">↗</span></a>
+    </span>
   </div>
   <p class="doc-intro">국가기술자격과 관련된 법령을 매일 새벽 전수 분석해 공개합니다.</p>
   <p class="doc-guide">아래 네 개 노선 중 원하는 곳에서 출발하세요 — 오늘의 운행 현황은 <b>총괄현황</b>, 법령별 분석은 <b>활용도</b>, 자격증에서 출발하려면 <b>우대사항</b>, 한 달 요약은 <b>이슈브리핑</b>입니다.</p>
