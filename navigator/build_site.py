@@ -437,6 +437,25 @@ def r_build(rows):
 # 실패 시 코드 없이 진행 — 딥링크만 비활성화되고 화면·기능은 종전과 동일(격리).
 DEEPLINK_YEAR = int(os.environ.get("QPAGE_BASE_YEAR", "2024"))   # 명찰 세대와 동일 기본값
 
+def load_font_face():
+    """navigator/fonts/의 서브셋 woff2를 base64로 읽어 @font-face <style>을 돌려준다.
+
+    ★2026-09-15 작업지시(웹폰트 내장) §3: 실사용∪KS완성형 2,565자 서브셋(가변 1파일).
+    파일이 없으면 경고 후 빈 문자열 — 시스템 글꼴 폴백(§3-4)으로 화면은 계속 뜬다.
+    """
+    fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "Pretendard-QRadar.woff2")
+    try:
+        import base64
+        b64 = base64.b64encode(open(fp, "rb").read()).decode("ascii")
+        print(f"  · 웹폰트 내장: Pretendard 서브셋 {os.path.getsize(fp)//1024}KB (base64 {len(b64)//1024}KB)")
+        return ("<style>@font-face{font-family:'Pretendard';font-style:normal;"
+                "font-weight:45 930;font-display:swap;"
+                "src:url(data:font/woff2;base64," + b64 + ") format('woff2')}</style>")
+    except FileNotFoundError:
+        print(f"  ⚠ 폰트 파일 없음({fp}) → 시스템 글꼴 폴백으로 진행(내장 생략)")
+        return ""
+
+
 def load_cert_codes():
     """{정규화 종목명: 종목코드} 사전과 사전 파일 경로를 돌려준다. 실패 시 ({}, None)."""
     try:
@@ -595,7 +614,8 @@ def build():
       "@@M_OPTS@@":m_opts, "@@M_DEF_FROM@@":def_from, "@@M_DEF_TO@@":def_to,
       "@@M_TOTAL_CERTS@@":str(m_total_certs), "@@M_CARDS@@":m_cards,
       "@@R_CARDS@@":r_cards, "@@R_TOTAL@@":str(r_total), "@@NOCERT@@":nocert_banner, "@@NOCERT_JSON@@":nocert_json,
-      "@@BUILT_AT@@":(datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%Y.%m.%d"),  # ★2026-09-04 KST 보정(249행 관례와 통일) — UTC 러너의 새벽 빌드가 전날로 각인되던 문제
+      "@@BUILT_AT@@":(datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%Y.%m.%d"),
+      "@@FONT_FACE@@":load_font_face(),  # ★2026-09-04 KST 보정(249행 관례와 통일) — UTC 러너의 새벽 빌드가 전날로 각인되던 문제
       "@@MLAWS@@":json.dumps(mdata, ensure_ascii=False).replace("</","<\\/"),
       "@@RCERTS@@":json.dumps(rcerts, ensure_ascii=False).replace("</","<\\/"),
       "@@RENTRIES@@":json.dumps(rentries, ensure_ascii=False).replace("</","<\\/"),
@@ -628,13 +648,12 @@ PAGE = r"""<!DOCTYPE html>
 <html lang="ko"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>자격증 법령 네비게이터 · HRDK</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700;900&display=swap" rel="stylesheet">
+@@FONT_FACE@@<!-- 웹폰트 내장(★2026-09-15 작업지시 §3): CDN 의존 제거 — 오프라인·CDN 장애 시에도 동일 표시.
+     Noto Serif KR은 로드만 되고 미사용(실측)이라 내장 없이 제거. -->
 <style>
 /* ═══ B안 「법령 노선도」 — 교통 사인 시스템: 노선색·역명판·정거장 ═══ */
 :root{--bg:#FAFBFD;--ink:#101828;--navy:#1F3864;--mut:#5D6B7E;--line:#E4E8EF;--hrdk:#0072CE;
---l1:#C0492F;--l2:#1F6FB2;--l3:#0F6E56;--l4:#5B4BB0;--l5:#8A8F98;--go:#00A86B;
+--l1:#C0492F;--l2:#1F6FB2;--l3:#0F6E56;--l4:#5B4BB0;--l5:#8A8F98;--go:#00A86B;--go-txt:#00795C;/* B-4: 글자 전용 초록(4.5:1 충족) — 도형·배지 배경은 --go 유지 */
 --sans:'Pretendard',-apple-system,sans-serif;--accent:#1F6FB2;--hrdk:#005EB8}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.65}
@@ -688,7 +707,7 @@ header.site .wrap{padding-top:26px}
 @media (max-width:640px){.qpage-box{align-items:flex-start}.qpage-ask{font-size:11.5px}}
 /* ★2026-09-09 자매 서비스(Q-Page) 바로가기 — 종전 가동 배지(seal-stamp) 자리.
    가동 표기는 상단 gov-bar 문구로 통합해 중복 제거. */
-.qpage-link{flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--go);
+.qpage-link{flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--go-txt);
 background:#EBF9F2;border:1.5px solid #BFEBD6;border-radius:999px;padding:8px 15px;line-height:1.2;
 text-decoration:none;transition:background .15s,border-color .15s}
 .qpage-link:hover,.qpage-link:focus-visible{background:#DCF3E7;border-color:#8FDCBB}
@@ -765,7 +784,10 @@ main .wrap{padding:26px 22px 60px}
 .rcard .card-foot{margin-top:auto;display:flex;flex-direction:column;gap:9px}
 .foot-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .lc{font-size:12px;font-weight:700;color:var(--navy);background:#EEF3FB;border-radius:999px;padding:3px 10px}
-.gb-live{color:var(--go);font-weight:800}
+.gov-bar .gb-live,.gb-live{color:var(--go-txt);font-weight:800}  /* B-4: gov-bar b 규칙보다 우선하도록 구체화 */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:1000;background:var(--hrdk);color:#fff;padding:10px 18px;border-radius:0 0 10px 0;font-weight:700;text-decoration:none}
+.skip-link:focus{left:0}
+#main-content{outline:none}
 .sjb-badge{font-size:11px;font-weight:700;color:var(--l1);background:#FBEDEA;border-radius:999px;padding:3px 9px}
 .rcard .detail-link{background:none;border:1.5px solid var(--line);color:var(--navy);width:100%;border-radius:12px}
 .rcard .detail-link:hover{border-color:var(--navy);background:#EEF3FB}
@@ -956,6 +978,7 @@ footer b{color:var(--navy)}
 }
 </style>
 </head><body>
+<a class="skip-link" href="#main-content">본문 바로가기</a><!-- B-1 -->
 <div class="gov-bar"><div class="wrap"><b>한국산업인력공단</b><span>국가기술자격 × 국가법령정보센터</span><span>@@BUILT_AT@@ 발행 · <b class="gb-live">매일 새벽 자동 분석 갱신 중</b></span></div></div>
 <header class="site"><div class="wrap">
   <div class="doc-head">
@@ -976,6 +999,7 @@ footer b{color:var(--navy)}
   </nav>
 </div></header>
 
+<main id="main-content" tabindex="-1"><!-- B-1 도착점 · B-3 초점 컨테이너 -->
 <div class="ai-note"><div class="wrap">ⓘ 본 화면의 법령 분석은 AI가 작성하고 담당자의 검증 절차를 거친 <b>참고 정보</b>입니다. 법적 효력이 있는 판단은 반드시 <b>법제처 원문</b>을 확인하시기 바랍니다.</div></div>
 
 <!-- ===== 화면4: 월간 이슈브리핑 ===== -->
@@ -1019,7 +1043,7 @@ footer b{color:var(--navy)}
   <div class="toolbar"><div class="wrap">
     <div class="trow period"><span>기간</span>
       <select id="mfrom">@@M_OPTS@@</select><span>~</span><select id="mto">@@M_OPTS@@</select>
-      <span class="count"><b id="cnt">0</b>건 표시 중</span></div>
+      <span class="count" aria-live="polite"><b id="cnt">0</b>건 표시 중</span></div>
     <div class="trow">
       <select id="scope" aria-label="검색 범위"><option value="all">전체검색</option><option value="law">법령명</option><option value="cert">자격명칭</option><option value="detail">상세내용</option></select>
       <select id="minf" aria-label="소관부처 필터"><option value="">부처 전체</option>@@MINS@@</select>
@@ -1110,11 +1134,12 @@ footer b{color:var(--navy)}
   <div class="toolbar"><div class="wrap"><div class="trow">
     <div class="search"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <input id="qr" type="search" placeholder="자격증 이름으로 검색 (예: 전기기사)" aria-label="검색"></div>
-    <span class="count">자격증 <b id="cntr">0</b>개 <span class="cnt-note">(자격 통폐합·명칭변경 등이 포함된 수치)</span></span>
+    <span class="count" aria-live="polite">자격증 <b id="cntr">0</b>개 <span class="cnt-note">(자격 통폐합·명칭변경 등이 포함된 수치)</span></span>
   </div></div></div>
   <main><div class="wrap">@@NOCERT@@<div class="grid rgrid" id="grid-r">@@R_CARDS@@</div><p class="noresult" id="nores-r">해당 자격증이 없습니다.</p></div></main>
 </section>
 
+</main>
 <footer><div class="wrap"><b>안내</b> · 이 페이지는 AI가 법령 원문을 분석하고 정리하였습니다. 정확한 법적 효력은 반드시 <a href="https://www.law.go.kr" target="_blank" rel="noopener" style="color:var(--accent)">국가법령정보센터</a> 원문을 확인하세요. 출처: 국가법령정보센터 | 생성일 @@BUILT_AT@@ | 한국산업인력공단 실증(PoC)</div></footer>
 
 <div class="modal" id="modal" aria-hidden="true" role="dialog" aria-modal="true"><div class="modal-backdrop"></div><div class="modal-panel"><button class="modal-close" aria-label="닫기">&times;</button><div id="m-body"></div></div></div>
@@ -1144,6 +1169,9 @@ tabs.forEach(function(t){t.addEventListener('click',function(){
   tabs.forEach(function(x){x.classList.remove('active');}); t.classList.add('active');
   for(var k in views) views[k].hidden=(k!==t.dataset.view);
   window.scrollTo(0,0);
+  document.title=t.textContent.trim()+' — 자격증 법령 네비게이터';        // B-2
+  var v=views[t.dataset.view];                                            // B-3
+  if(v){v.setAttribute('tabindex','-1');v.focus({preventScroll:true});}
 });});
 
 // ── 플로팅 바 (★2026-08-06): 맨 위로 · 화면 이동 · 주소 복사 ──
@@ -1225,7 +1253,9 @@ function openM(modalEl){
 function closeModal(){
   if(MOB_BACK && !POPGUARD && modal.classList.contains('open')){history.back();return;}
   modal.classList.remove('open');modal.setAttribute('aria-hidden','true');if(!modal2.classList.contains('open'))document.body.style.overflow='';
-  if(window.__qrClearHash)window.__qrClearHash();}
+  if(window.__qrClearHash)window.__qrClearHash();
+  var at=document.querySelector('.tab.active');
+  if(at)document.title=at.textContent.trim()+' — 자격증 법령 네비게이터';}
 function closeModal2(){
   if(MOB_BACK && !POPGUARD && modal2.classList.contains('open')){history.back();return;}
   modal2.classList.remove('open');modal2.setAttribute('aria-hidden','true');if(!modal.classList.contains('open'))document.body.style.overflow='';}
@@ -1292,7 +1322,7 @@ function openCert(i){var d=RCERTS[i];if(!d)return;
   }).join('');
   mb.innerHTML='<h2 class="m-cert">'+escq(d.cert)+'</h2>'
     +'<div class="m-pfs">'+pfs+'</div><div class="m-sec"><h4>이 자격증을 우대하는 법령 ('+(d.idx||[]).length+'건)</h4>'+laws+'</div>';
-  openM(modal); if(window.__qrSyncHash)window.__qrSyncHash(i);}
+  openM(modal); if(window.__qrSyncHash)window.__qrSyncHash(i); document.title=d.cert+' 우대 법령 — 자격증 법령 네비게이터';}
 // radar 법령 상세(2차)
 function trkBlock(k,code,name,desc,sub){return '<div class="trk"><div class="k">'+k+'</div><div class="v">'+escq(code)+(name?' · '+escq(name):'')+(sub?' <span class="sub">('+escq(sub)+')</span>':'')+'</div>'+(desc?'<div class="d">'+escq(desc)+'</div>':'')+'</div>';}
 function openLaw(ei){var l=RENTRIES[ei];if(!l)return;
