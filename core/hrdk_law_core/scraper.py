@@ -61,7 +61,9 @@ def clean_to_markdown(title: str, content: str) -> str:
     if not content:
         return ""
     text = content.strip()
-    text = re.sub(r"(①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩)", r"\n- **\\1**", text)
+    # ★2026-09-16 수정: 종전 r"\n- **\\1**" 은 백슬래시 중복으로 그룹 참조가 아닌 문자 '\1' 을 써 넣어
+    #   모든 항 번호(①②③…)가 원문에서 사라지고 '\1' 로 통일되던 결함 → 항 번호를 그대로 살린다.
+    text = re.sub(r"(①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩|⑪|⑫|⑬|⑭|⑮)", r"\n- **\1**", text)
     return f"### 📜 {title}\n{text}\n"
 
 
