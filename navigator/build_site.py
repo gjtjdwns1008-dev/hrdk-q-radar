@@ -29,7 +29,7 @@ MCOL = {"law":"법령명","ministry":"소관부처","date":"시행일자","kind"
 RCOL = {"law":"법령명","article":"근거조문","pref":"우대분류","certs":"관련 종목",
         "t1type":"Track1_취급유형","t1risk":"Track1_위험도","t2":"Track2_효용코드",
         "sjb":"중처법대상","detail":"상세 분석 결과","summary":"조문 요약","rel":"연관도",
-        "eff":"시행일자","reason":"검토사유","links":"조문별 다이렉트 링크"}
+        "eff":"시행일자","reason":"검토사유","links":"조문별 다이렉트 링크","flag":"우대여부"}
 PREF_ORDER = ["의무고용","직무권한부여","인사우대","시험면제","기타"]
 PREF_COLOR = {"의무고용":"#C0492F","직무권한부여":"#1F6FB2","인사우대":"#0F6E56","시험면제":"#5B4BB0","기타":"#8A8F98"}
 
@@ -77,6 +77,15 @@ def law_url_name(name): return f"https://www.law.go.kr/법령/{quote(str(name or
 
 # 사전에 '·'(가운뎃점)가 포함된 정식 종목명 (분리 시 보호해야 함)
 DOT_CERTS = ["항공전기·전자정비기능사"]
+# ★2026-09-16 포괄형 종목 토큰 — core/hrdk_law_core/certs.py 의 SCOPE_TOKEN_ALL 과 같은 값.
+#   (네비게이터는 core 패키지에 의존하지 않으므로 값을 여기 한 번 더 둔다. 바꿀 때 두 곳 함께.)
+#   법령이 개별 종목 대신 '국가기술자격 취득자' 전체를 우대하면 관련 종목 칸에 이 토큰만 들어온다.
+#   → 종목 카드로 만들지 않고, 우대여부 O이면 '전 종목 공통 우대' 로 별도 섹션에 표시한다.
+SCOPE_TOKEN_ALL = "[전종목]"
+
+def is_scope_all(raw):
+    """관련 종목 칸이 포괄형 토큰([전종목])을 담고 있는가."""
+    return SCOPE_TOKEN_ALL in re.sub(r"\s", "", str(raw or ""))
 
 def split_certs(raw):
     """관련 종목 문자열 분리. 괄호 안 쉼표 + 사전의 가운뎃점 종목명을 보호한 뒤
@@ -90,7 +99,8 @@ def split_certs(raw):
     # 3) 분리 후 복원
     parts = [c.strip().replace("§", ",").replace("㉿", "·") for c in re.split(r"[,/·\n]", s) if c.strip()]
     # '없음'류 무효 토큰 제거 — 빈칸과 완전 동일 취급 (유령 '없음' 자격증 그룹 방지)
-    return [c for c in parts if c not in ("없음", "-", "–", "해당없음")]
+    # 포괄형 토큰 [전종목]은 종목명이 아니므로 제외 (is_scope_all 로 별도 판별)
+    return [c for c in parts if c not in ("없음", "-", "–", "해당없음") and re.sub(r"\s", "", c) != SCOPE_TOKEN_ALL]
 
 def fmt_eff(s):
     """시행일자 표기: '20220103' → '2022.01.03'. 형식 다르면 원문 그대로."""
@@ -344,8 +354,13 @@ def r_build(rows):
         law = str(r.get(RCOL["law"]) or "").strip()
         sjb = str(r.get(RCOL["sjb"]) or "").strip() not in ("","비대상","해당없음")
         if not certs:
-            # 종목 미상: 우대는 있으나 종목을 특정 못한 법령 → 별도 섹션용으로 수집
+            # ★2026-09-16 우대여부 O 인 행만 '공통·미특정 우대법령' 섹션으로. (종전에는 우대 아닌
+            #   단순관련 행 15건이 '우대법령' 간판 아래 노출되던 정합성 문제 → 차단)
+            if str(r.get(RCOL["flag"]) or "").strip().upper() != "O":
+                continue
             nc = {
+                # k: "공통" = 전 종목 포괄형([전종목] 토큰) / "미특정" = 종목을 특정 못함
+                "k": "공통" if is_scope_all(r.get(RCOL["certs"])) else "미특정",
                 "law": law,
                 "p": str(r.get(RCOL["pref"]) or "").strip() or "기타",
                 "a": str(r.get(RCOL["article"]) or "").strip(),
@@ -558,9 +573,9 @@ def build():
         nocert_banner = (
             '<button type="button" class="nocert-banner" id="nocert-open">'
             '<span class="nc-ic">🔎</span>'
-            '<span class="nc-btxt"><b>종목 미상 우대법령</b> '
+            '<span class="nc-btxt"><b>전 종목 공통·종목 미특정 우대법령</b> '
             '<span class="nc-cnt">' + str(len(nocert)) + '건</span></span>'
-            '<span class="nc-bsub">우대는 있으나 종목 특정이 어려운 법령 · 눌러서 보기 →</span>'
+            '<span class="nc-bsub">모든 종목에 공통 적용되거나 종목 특정이 어려운 우대 법령 · 눌러서 보기 →</span>'
             '</button>')
         nocert_json = json.dumps(nocert, ensure_ascii=False).replace("</", "<\\/")
     else:
@@ -892,6 +907,7 @@ background:linear-gradient(90deg,var(--l1) 0 20%,var(--l2) 20% 40%,var(--l3) 40%
 .nc-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .nc-tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEF3FB;color:var(--navy);border:1.5px solid #D7E3F2}
 .nc-tag.warn{background:#FBEDEA;color:var(--l1);border-color:#F3D5CE}
+.nc-tag.common{background:#E8F5EE;color:#0F6E56;border-color:#BFE3D0}
 .nc-det{margin:8px 0;padding:10px 12px;background:#F7FAFC;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:12.5px;line-height:1.65;color:#33404F}
 .nc-det b{color:var(--navy);font-size:11.5px}
 .nc-r{font-size:12px;color:var(--mut);margin-top:5px}
@@ -1269,8 +1285,10 @@ if(MOB_BACK) window.addEventListener('popstate', function(){
 // 종목 미상 우대법령 팝업
 function openNocert(){
   if(!NOCERT||!NOCERT.length)return;
-  var items=NOCERT.map(function(x){
+  var list=NOCERT.slice().sort(function(a,b){return (a.k==='공통'?0:1)-(b.k==='공통'?0:1);});  // 공통 먼저
+  var items=list.map(function(x){
     var h='<div class="nc-item"><div class="nc-h">'+pfBadge(x.p||'기타')+'<span class="nc-law">'+escq(x.law)+'</span>';
+    if(x.k==='공통')h+='<span class="nc-tag common">🌐 전 종목 공통 우대</span>';
     if(x.e)h+='<span class="law-eff">시행 '+escq(x.e)+'</span>';
     h+='</div>';
     // 분류 배지 3종 — 코드를 한글명으로 변환(T1TYPE/T1RISK/T2 매핑, 관련법령 탭과 동일)
@@ -1282,14 +1300,16 @@ function openNocert(){
     if(tags)h+='<div class="nc-tags">'+tags+'</div>';
     if(x.a)h+='<div class="nc-art">📖 '+escq(x.a)+'</div>';
     if(x.d)h+='<div class="nc-det"><b>우대사항 분석</b><br>'+escq(x.d)+'</div>';
-    if(x.r)h+='<div class="nc-r">📌 종목 미특정 사유: '+escq(x.r)+'</div>';
+    if(x.r)h+='<div class="nc-r">📌 '+(x.k==='공통'?'참고':'종목 미특정 사유')+': '+escq(x.r)+'</div>';
     h+='<a class="nc-ext" href="'+escq(x.u)+'" target="_blank" rel="noopener">법제처에서 원문 확인 →</a></div>';
     return h;
   }).join('');
-  mb2.innerHTML='<h2 class="m2-law">🔎 종목 미상 우대법령 <span class="nc-cnt">'+NOCERT.length+'건</span></h2>'
-    +'<p class="nc-desc">아래 법령은 국가기술자격 취득자에 대한 <b>우대 조항은 확인되었으나</b>, '
-    +'구체적인 자격 종목이 별표·하위 규정·채용공고 등에 위임되어 있어 <b>개별 종목을 특정하지 못한</b> 경우입니다. '
-    +'실제 적용 종목은 각 법령 원문(특히 별표)을 직접 확인해 주세요.</p>'+items;
+  var nCommon=list.filter(function(x){return x.k==='공통';}).length;
+  mb2.innerHTML='<h2 class="m2-law">🔎 전 종목 공통·종목 미특정 우대법령 <span class="nc-cnt">'+NOCERT.length+'건</span></h2>'
+    +'<p class="nc-desc"><b>🌐 전 종목 공통 우대</b>('+nCommon+'건)는 법령이 특정 종목이 아니라 <b>국가기술자격 취득자 전체</b>에 '
+    +'우대(가점·시험면제 등)를 주는 경우로, 어떤 종목이든 해당됩니다. '
+    +'나머지('+(NOCERT.length-nCommon)+'건)는 <b>우대 조항은 확인되었으나</b> 구체적인 종목이 별표·하위 규정 등에 위임되어 '
+    +'<b>개별 종목을 특정하지 못한</b> 경우입니다. 실제 적용 종목은 각 법령 원문(특히 별표)을 직접 확인해 주세요.</p>'+items;
   openM(modal2);
 }
 var ncBtn=document.getElementById('nocert-open');
