@@ -257,12 +257,12 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
                     stars = "\n".join(
                         s.text.strip() for s in detail_root.findall(".//별표내용") if s.text
                     )
-                    full_text = f"### 🏢 개정이유\n{reason_text}\n\n"
+                    # ★2026-09-16 상한 적용 방식 변경: 종전에는 완성된 원문의 뒤를 잘라 '별표'(맨 뒤)가 먼저 사라졌다.
+                    #   → 머리(개정이유·바뀐 조문 표시)와 꼬리(별표 본문·파일 별표·상태)는 항상 살리고, 조문 본문만 상한 안에서 자른다.
+                    head_text = f"### 🏢 개정이유\n{reason_text}\n\n"
                     if changed_articles:
-                        full_text += "### 🚨 이번에 바뀐 조문(표시)\n" + ", ".join(changed_articles[:40]) + "\n\n"
-                    full_text += f"### 📖 전체 조문\n{body}"
-                    if stars:
-                        full_text += f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}"
+                        head_text += "### 🚨 이번에 바뀐 조문(표시)\n" + ", ".join(changed_articles[:40]) + "\n\n"
+                    tail_text = f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}" if stars else ""
                     # ★재발방지(2026-07-06): 파일 전용 별표 심층 수집 + 상태 사실 표기
                     try:
                         from .annex import build_annex_sections
@@ -288,16 +288,25 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
                             return bytes(_buf)
                         ax_text, ax_status = build_annex_sections(detail_root, _ax_get, law_name=law_name, api_key=api_key)
                         if ax_text:
-                            full_text += f"\n\n{ax_text}"
+                            tail_text += f"\n\n{ax_text}"
                         if ax_status:
-                            full_text += f"\n\n{ax_status}"
+                            tail_text += f"\n\n{ax_status}"
                     except Exception as _ax_e:
                         print(f"    ⚠️ 별표 심층수집 건너뜀: {str(_ax_e)[:40]}")
+
+                    # 상한(ORIGINAL_MAX_CHARS, 기본 150,000) 은 조문 본문에만 — 별표는 잘리지 않는다.
+                    _max = int(os.environ.get("ORIGINAL_MAX_CHARS", "150000"))
+                    _budget = max(_max - len(head_text) - len(tail_text) - 200, 20_000)
+                    if len(body) > _budget:
+                        _cut = len(body) - _budget
+                        body = body[:_budget] + f"\n…(조문 본문 뒷부분 {_cut:,}자 생략 — ORIGINAL_MAX_CHARS 상한. 별표는 아래에 전부 포함)"
+                        print(f"    ✂️ 조문 본문 {_cut:,}자 생략(상한 {_max:,}) — 별표는 보존")
+                    full_text = head_text + f"### 📖 전체 조문\n{body}" + tail_text
 
                     all_laws_dict[law_name] = {
                         "법령명": law_name, "시행일자": enforce_date,
                         "소관부처": ministry, "공포번호": prom_num,
-                        "공포일자": prom_date, "원본": full_text[:int(os.environ.get("ORIGINAL_MAX_CHARS", "150000"))],
+                        "공포일자": prom_date, "원본": full_text,   # 상한은 위에서 조문 본문에만 적용됨
                         "링크": base_law_link, "스킵여부": False,
                     }
                     time.sleep(0.1)
