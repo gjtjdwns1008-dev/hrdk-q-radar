@@ -102,4 +102,8 @@ jobs:
           WORKNET_API_KEY: ${{ secrets.WORKNET_API_KEY }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}          # 새도우 중엔 시크릿 미등록 = 미발송
           MANUAL_DATE: ${{ github.event.inputs.manual_date }}
+          # ★2026-09-16 모델·통제 설정 (core/llm_client.py 3.x 대응과 짝) — 되돌릴 때는 아래 3줄만 지우면 종전(3.5·온도) 동작
+          LLM_MODEL: "gemini-3.8-flash"        # 분석 모델. 3.x는 온도 무시 → 아래 thinking_level 로 통제
+          LLM_THINKING_LEVEL: "medium"          # low | medium | high  (minimal 은 3.8에서 400 오류 — 코드가 무시 처리)
+          WORKNET_ENABLED: "0"                  # 워크넷 실시간 조회 배제 결정('26.9.16) — 대장에 "미조회(OFF)" 기록. 켤 때 "1"
         run: python pipeline/main.py
