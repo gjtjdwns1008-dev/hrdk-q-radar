@@ -26,6 +26,11 @@ from functools import lru_cache
 from importlib import resources
 
 # 패키지에 동봉된 종목 CSV 파일명(기본/폴백용). 연도 미지정 시 이 파일을 씁니다.
+# ★2026-09-16 포괄형 종목 토큰 — 법령이 개별 종목이 아닌 '국가기술자격 취득자' 전체를 통칭할 때
+#   AI가 종목 칸에 쓰는 유일한 허용 토큰. normalize_cert_string이 그대로 통과시키며,
+#   네비게이터(전 종목 공통 우대 섹션)·Q-Page 내보내기(제외)·워크넷(조회 생략)이 이 값으로 분기한다.
+SCOPE_TOKEN_ALL = "[전종목]"
+
 _CSV_FILENAME = "qnet_certs_2026.csv"
 _CSV_PREFIX = "qnet_certs_"   # 연도별 파일: qnet_certs_2026.csv, qnet_certs_2027.csv ...
 
@@ -366,11 +371,18 @@ def normalize_cert_string(raw, year=None):
     - ★포괄명칭 확장: 법령이 '미용사'처럼 포괄 명칭만 쓰면, 사전의 '미용사(일반)'
       '미용사(피부)' 등 「토큰(」으로 시작하는 종목 전부로 확장 (실사용자 피드백 반영)
     - 사전에 없는 범주형/임의 표현('~전체', '~등 직무분야 종목' 등)은 제외
+    - ★예외: 포괄형 토큰 [전종목](SCOPE_TOKEN_ALL)은 사전 대조 없이 그대로 통과
 
     반환: (정식종목 콤마문자열, 제외된_표현_리스트)
     """
     import re as _re
     s = str(raw or "")
+    # ★2026-09-16 포괄형 토큰: 조문이 '국가기술자격 취득자' 전체를 통칭하면 AI는 종목 칸에
+    #   [전종목] 하나만 쓴다(프롬프트 STEP 2-②). 이 토큰은 사전 대조 없이 그대로 통과시키고,
+    #   함께 나열된 개별 종목명은 토큰에 포섭되므로 버리지 않되 출력에서 제외한다(중복 표기 방지).
+    #   소비처(네비게이터·Q-Page 내보내기·워크넷)는 SCOPE_TOKEN_ALL 로 이 값을 식별한다.
+    if _re.sub(r"\s", "", s).find(SCOPE_TOKEN_ALL) >= 0:
+        return SCOPE_TOKEN_ALL, []
     s = _re.sub(r"\(([^)]*)\)", lambda m: "(" + m.group(1).replace(",", "§") + ")", s)
     toks = [t.strip().replace("§", ",") for t in _re.split(r"[,/]", s) if t.strip()]
     dnorm = _dict_norm_map(year)

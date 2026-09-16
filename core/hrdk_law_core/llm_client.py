@@ -35,14 +35,16 @@ class LLMClient(ABC):
 
     @abstractmethod
     def generate(self, prompt: str, *, max_output_tokens: int = 32768,
-                 temperature: float = 0.1) -> str:
-        """프롬프트를 받아 모델의 응답 텍스트(원문)를 반환합니다."""
+                 temperature: float = 0.1, json_mode: bool = False) -> str:
+        """프롬프트를 받아 모델의 응답 텍스트(원문)를 반환합니다.
+        json_mode=True 이면 (지원 모델에 한해) JSON 형식 출력을 강제합니다.
+        ※ 기본 False — 이슈브리핑 자유 서술 등 기존 호출부는 그대로 동작."""
         ...
 
     # 재시도는 모델과 무관한 공통 로직이므로 여기서 한 번만 구현
     def generate_with_retry(self, prompt: str, *, attempt_count: int = 5,
                             max_output_tokens: int = 32768,
-                            temperature: float = 0.1) -> str:
+                            temperature: float = 0.1, json_mode: bool = False) -> str:
         """
         503(서버폭주)/timeout/429(크레딧) 등 일시 오류에 대해 지수 백오프 재시도.
         attempt_count회 모두 실패하면 마지막 예외를 그대로 올립니다.
@@ -56,6 +58,7 @@ class LLMClient(ABC):
                     prompt,
                     max_output_tokens=max_output_tokens,
                     temperature=temperature,
+                    json_mode=json_mode,
                 )
             except Exception as e:
                 last_err = e
@@ -80,6 +83,17 @@ class LLMClient(ABC):
 # 어댑터 1: Gemini (현재 사용 중)
 # ──────────────────────────────────────────────────────────
 class GeminiClient(LLMClient):
+    """Gemini 어댑터.
+    ★2026-09-16 3.x 대응: Gemini 3.x 계열은 temperature/top_p/top_k를 백엔드에서 무시하므로
+      온도를 보내지 않고, 결정성은 (1) thinking_level 고정 (2) JSON 형식 강제(json_mode)로 통제한다.
+      · thinking_level: 환경변수 LLM_THINKING_LEVEL ("low" | "medium" | "high"). 비우면 모델 기본값.
+        ("minimal"은 3.7 Flash 이후 400 오류 → 허용하지 않음)
+      · JSON 강제는 호출별(json_mode)로만 켠다 — 이슈브리핑 자유 서술이 같은 함수를 쓰기 때문.
+      · 2.x 구세대 모델을 LLM_MODEL로 지정하면 종전처럼 temperature를 전달한다.
+    """
+    _GEN3_PREFIX = ("gemini-3",)
+    _THINKING_OK = ("low", "medium", "high")
+
     def __init__(self, api_key: str, model: str = "gemini-3.5-flash"):
         from google import genai  # 지연 import (gemini 미설치 환경 보호)
         self._genai = genai
@@ -87,16 +101,30 @@ class GeminiClient(LLMClient):
         self._types = types
         self._client = genai.Client(api_key=api_key)
         self._model = model
+        lvl = os.environ.get("LLM_THINKING_LEVEL", "").strip().lower()
+        if lvl and lvl not in self._THINKING_OK:
+            print(f"    ⚠️ LLM_THINKING_LEVEL='{lvl}' 은 허용값(low/medium/high)이 아니어서 무시합니다.")
+            lvl = ""
+        self._thinking = lvl
+
+    def _is_gen3(self) -> bool:
+        return self._model.lower().startswith(self._GEN3_PREFIX)
 
     def generate(self, prompt: str, *, max_output_tokens: int = 32768,
-                 temperature: float = 0.1) -> str:
+                 temperature: float = 0.1, json_mode: bool = False) -> str:
+        cfg = {"max_output_tokens": max_output_tokens}
+        if json_mode:
+            cfg["response_mime_type"] = "application/json"      # 형식 강제 (분석 프롬프트 전용)
+        if self._is_gen3():
+            # temperature 인자는 호출부 호환용으로만 받고 전송하지 않음 (3.x는 무시하는 값)
+            if self._thinking:
+                cfg["thinking_config"] = self._types.ThinkingConfig(thinking_level=self._thinking)
+        else:
+            cfg["temperature"] = temperature                      # 2.x 구세대 모델에만 온도 전달
         response = self._client.models.generate_content(
             model=self._model,
             contents=prompt,
-            config=self._types.GenerateContentConfig(
-                max_output_tokens=max_output_tokens,
-                temperature=temperature,
-            ),
+            config=self._types.GenerateContentConfig(**cfg),
         )
         return response.text.strip()
 
@@ -113,7 +141,7 @@ class OpenAICompatibleClient(LLMClient):
         self._model = model
 
     def generate(self, prompt: str, *, max_output_tokens: int = 32768,
-                 temperature: float = 0.1) -> str:
+                 temperature: float = 0.1, json_mode: bool = False) -> str:
         import requests
         resp = requests.post(
             f"{self._base_url}/chat/completions",
@@ -140,7 +168,7 @@ class EchoClient(LLMClient):
         self._canned = canned_response or '{"연관성_판별": "해당없음", "종목": "없음"}'
 
     def generate(self, prompt: str, *, max_output_tokens: int = 32768,
-                 temperature: float = 0.1) -> str:
+                 temperature: float = 0.1, json_mode: bool = False) -> str:
         return self._canned
 
 

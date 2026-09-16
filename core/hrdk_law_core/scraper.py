@@ -65,9 +65,17 @@ def clean_to_markdown(title: str, content: str) -> str:
     return f"### 📜 {title}\n{text}\n"
 
 
-def get_base_laws(api_key: str, target_date: str) -> list | None:
+def norm_law_name(name: str) -> str:
+    """법령명 비교용 정규화: 공백·중점·괄호를 제거한 키."""
+    return re.sub(r"[\s·ㆍ()（）]", "", str(name or ""))
+
+
+def get_base_laws(api_key: str, target_date: str, only_names: set | None = None) -> list | None:
     """
     특정 일자의 시행 법령을 수집·정제합니다.
+
+    only_names : ★2026-09-16 재분석 도구용 선택 인자. 법령명(공백·구두점 제거) 집합을 주면 그 법령만
+                 원문을 수집한다(나머지는 목록 단계에서 건너뜀 → 법제처 호출 최소화). None이면 종전과 동일.
 
     Parameters
     ----------
@@ -153,6 +161,8 @@ def get_base_laws(api_key: str, target_date: str) -> list | None:
 
                     if not law_id or law_name in all_laws_dict:
                         continue
+                    if only_names is not None and norm_law_name(law_name) not in only_names:
+                        continue   # 재분석 대상 아님 — 원문 수집 생략
 
                     base_law_link = f"https://www.law.go.kr/법령/{law_name}"
 

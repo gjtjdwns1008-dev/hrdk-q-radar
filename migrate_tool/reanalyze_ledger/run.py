@@ -41,6 +41,54 @@ CACHE = C.WORK / "cache"
 CACHE.mkdir(exist_ok=True)
 
 
+def preflight() -> bool:
+    """실행 전 점검: 패치된 core·brain 을 불러오는지 확인. 하나라도 옛 파일이면 어디를 덮어쓸지 알려주고 멈춘다."""
+    import inspect
+    ok = True
+    print("── 사전 점검 ──")
+    try:
+        import hrdk_law_core, hrdk_law_core.scraper as sc, hrdk_law_core.llm_client as lc, hrdk_law_core.certs as ce
+        core_dir = Path(hrdk_law_core.__file__).parent
+        print(f"· core 경로  : {core_dir}")
+        if "only_names" not in inspect.signature(sc.get_base_laws).parameters:
+            print(f"  ✗ scraper.py 가 패치 전 파일입니다 → {core_dir / 'scraper.py'} 를 패치본으로 덮어쓰세요."); ok = False
+        else:
+            print("  ✓ scraper.py (only_names 지원)")
+        if "json_mode" not in inspect.signature(lc.LLMClient.generate).parameters:
+            print(f"  ✗ llm_client.py 가 패치 전 파일입니다 → {core_dir / 'llm_client.py'} 를 덮어쓰세요."); ok = False
+        else:
+            print("  ✓ llm_client.py (json_mode·thinking_level 지원)")
+        if not hasattr(ce, "SCOPE_TOKEN_ALL"):
+            print(f"  ✗ certs.py 가 패치 전 파일입니다 → {core_dir / 'certs.py'} 를 덮어쓰세요."); ok = False
+        else:
+            print("  ✓ certs.py ([전종목] 토큰 지원)")
+        if str(core_dir).replace("\\", "/").find("/site-packages/") >= 0:
+            print("  ⚠ pip 에 설치된 core 를 불러왔습니다. 레포 폴더의 core/hrdk_law_core/ 가 있는지 확인하세요"
+                  f" (기대 위치: {REPO / 'core' / 'hrdk_law_core'}).")
+    except Exception as e:
+        print(f"  ✗ hrdk_law_core 를 불러올 수 없습니다: {e}"); ok = False
+    try:
+        import brain
+        print(f"· brain 경로 : {brain.__file__}")
+        if not hasattr(brain, "_apply_review_guards"):
+            print(f"  ✗ brain.py 가 패치 전 파일입니다 → {brain.__file__} 를 덮어쓰세요."); ok = False
+        else:
+            print("  ✓ brain.py (개정 프롬프트·후처리 방어망)")
+    except Exception as e:
+        print(f"  ✗ pipeline/brain.py 를 불러올 수 없습니다: {e}"); ok = False
+    m, lv = os.environ.get("LLM_MODEL", ""), os.environ.get("LLM_THINKING_LEVEL", "")
+    if not m or not lv:
+        print(f"  ⚠ .env 에 {'LLM_MODEL ' if not m else ''}{'LLM_THINKING_LEVEL ' if not lv else ''}이(가) 없습니다."
+              " 기본값(3.5-flash·thinking 미지정)으로 돌아갑니다. 3.8 로 돌리려면 .env 에 두 줄을 추가하세요:\n"
+              "     LLM_MODEL=gemini-3.8-flash\n     LLM_THINKING_LEVEL=medium")
+        if len(sys.argv) == 1:
+            ans = input("  그래도 기본 모델로 계속할까요? (y = 계속, 그 외 = 중단): ").strip().lower()
+            if ans != "y":
+                ok = False
+    print("──────────────")
+    return ok
+
+
 # ─────────────────────────────────────────────────────────────
 # 1. 원문 (시행일자 판본) — 캐시 우선
 # ─────────────────────────────────────────────────────────────
@@ -125,16 +173,23 @@ def main():
     ap.add_argument("--date", help="특정 시행일자(YYYYMMDD)만")
     ap.add_argument("--mock", action="store_true", help="★테스트 모드: 법제처·AI 호출 없음")
     args = ap.parse_args()
+    if len(sys.argv) == 1:                                   # ▶ 버튼(인자 없음): 화면에서 묻기
+        print("── 재분석 실행 (시트에는 쓰지 않음) ──")
+        ans = input("몇 건만 돌릴까요? 숫자 입력, 그냥 엔터 = 전량: ").strip()
+        args.limit = int(ans) if ans.isdigit() else 0
 
     C.load_env()
     if args.local:
         os.environ["LOCAL_XLSX"] = args.local
-    need = [] if args.local else ["GOOGLE_SHEET_URL", "GCP_SERVICE_ACCOUNT_JSON"]
+    args.mock = args.mock or os.environ.get("QRADAR_TOOL_MOCK") == "1"      # 테스트 전용 훅
+    need = [] if os.environ.get("LOCAL_XLSX") else ["GOOGLE_SHEET_URL", "GCP_SERVICE_ACCOUNT_JSON"]
     if not args.mock:
         need += ["LAW_API_KEY", "GEMINI_API_KEY"]
     if not C.require(need, "재분석 실행"):
         sys.exit(1)
     os.environ.setdefault("WORKNET_ENABLED", "0")                 # 결정('26.9.16): 실시간 조회 배제
+    if not preflight():
+        print("⛔ 사전 점검 실패 — 위 안내대로 파일·.env 를 고친 뒤 다시 실행하세요."); sys.exit(1)
 
     tp = Path(args.targets) if args.targets else sorted(C.WORK.glob("대상목록_*.xlsx"))[-1]
     import pandas as pd
