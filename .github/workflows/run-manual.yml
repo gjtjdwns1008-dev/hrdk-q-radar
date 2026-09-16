@@ -57,4 +57,5 @@ jobs:
           LLM_MODEL: "gemini-3.8-flash"        # 분석 모델. 3.x는 온도 무시 → 아래 thinking_level 로 통제
           LLM_THINKING_LEVEL: "medium"          # low | medium | high  (minimal 은 3.8에서 400 오류 — 코드가 무시 처리)
           WORKNET_ENABLED: "0"                  # 워크넷 실시간 조회 배제 결정('26.9.16) — 대장에 "미조회(OFF)" 기록. 켤 때 "1"
+          ORIGINAL_MAX_CHARS: "400000"          # 조문 본문 상한(글자). 별표는 상한과 무관하게 전부 포함. 로컬 재분석 도구(.env)와 같은 값으로 유지
         run: python pipeline/main.py
