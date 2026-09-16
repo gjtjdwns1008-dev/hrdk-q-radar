@@ -48,7 +48,11 @@ def _split_quals(cell: str) -> list[str]:
     text = (cell or "").strip()
     for sep in QUAL_SEPARATORS[1:]:
         text = text.replace(sep, QUAL_SEPARATORS[0])
-    return [t.strip() for t in text.split(QUAL_SEPARATORS[0]) if t.strip()]
+    # ★2026-09-16 포괄형 토큰 [전종목](core certs.SCOPE_TOKEN_ALL 과 같은 값)은 종목명이 아니므로 제외.
+    #   → 전 종목 공통 우대 법령은 Q-Page 종목별 집계·미매칭 집계 어디에도 들어가지 않는다(규격 v1.4에 자리 없음).
+    #   ※ 공통 우대 블록을 Q-Page에 보이게 할지는 규격 다음 판에서 Q-Page팀과 협의.
+    return [t.strip() for t in text.split(QUAL_SEPARATORS[0])
+            if t.strip() and t.strip().replace(" ", "") != "[전종목]"]
 
 
 def is_export_row(row: dict) -> bool:
