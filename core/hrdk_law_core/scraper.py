@@ -82,6 +82,13 @@ def jomun_full_text(jomun) -> str:
     return "\n".join(parts)
 
 
+def is_article_unit(jomun) -> bool:
+    """조문단위가 본문 조문인가(부칙·전문 제외). 조문여부는 자식 태그가 정식이고 속성으로 오는 판본도 대비.
+    값이 없으면 포함(본문 누락보다 부칙 포함이 덜 해롭다)."""
+    v = (jomun.attrib.get("조문여부") or jomun.findtext("조문여부") or "").strip()
+    return v in ("", "조문")
+
+
 def norm_law_name(name: str) -> str:
     """법령명 비교용 정규화: 공백·중점·괄호를 제거한 키."""
     return re.sub(r"[\s·ㆍ()（）]", "", str(name or ""))
@@ -229,28 +236,29 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
                             reason_text += r_node.text.strip() + "\n"
 
                     article_1, changed_articles = "", []
-                    for jomun in detail_root.findall(".//조문단위"):
-                        if jomun.attrib.get("조문여부") == "조문":
-                            title = (jomun.find("조문제목").text or "") if jomun.find("조문제목") is not None else ""
-                            content = jomun_full_text(jomun)                 # ★ 조문내용+항+호+목 (종전: 조문내용만)
-                            if "제1조(" in title or "목적" in title:
-                                article_1 = clean_to_markdown(title, content)
-                            elif "개정" in content or "신설" in content:
-                                changed_articles.append(clean_to_markdown(title, content))
-
+                    # ★2026-09-16 조문 본문 조립 (두 가지 결함 수정)
+                    #  ① 각 호 누락: <조문내용>.text 만 읽어 항·호·목이 빠졌음 → jomun_full_text 로 전체 본문
+                    #  ② '조문여부' 는 속성이 아니라 자식 태그(<조문여부>조문</조문여부>) → 종전 attrib 검사는 항상 불일치.
+                    #     그래서 '제1조+바뀐 조문만' 분기는 8개월간 한 번도 작동하지 않았고 늘 '전체 조문' 으로 돌았다.
+                    #     운영 실동작(전체 조문)을 유지하고, 바뀐 조문은 앞에 '표시' 로만 덧붙인다(개정되지 않은 우대 조문 누락 방지).
+                    articles = [j for j in detail_root.findall(".//조문단위") if is_article_unit(j)]
+                    body_parts, changed_articles = [], []
+                    for jomun in articles:
+                        title = (jomun.findtext("조문제목") or "").strip()
+                        content = jomun_full_text(jomun)
+                        if not content:
+                            continue
+                        body_parts.append(clean_to_markdown(title, content) if title else content)
+                        if "<개정" in content or "<신설" in content or "[신설" in content:
+                            changed_articles.append(title or content[:30])
+                    body = "\n".join(body_parts)
                     stars = "\n".join(
                         s.text.strip() for s in detail_root.findall(".//별표내용") if s.text
                     )
                     full_text = f"### 🏢 개정이유\n{reason_text}\n\n"
-                    full_text += f"{article_1}\n" if article_1 else ""
                     if changed_articles:
-                        full_text += "### 🚨 이번에 바뀐 핵심 조문\n" + "\n".join(changed_articles)
-                    else:
-                        body = "\n".join(                                    # ★ 조문단위별 전체 본문 (종전: 조문내용만)
-                            jomun_full_text(j) for j in detail_root.findall(".//조문단위")
-                            if j.attrib.get("조문여부") == "조문"
-                        )
-                        full_text += f"### 🚨 전체 조문\n{body}"
+                        full_text += "### 🚨 이번에 바뀐 조문(표시)\n" + ", ".join(changed_articles[:40]) + "\n\n"
+                    full_text += f"### 📖 전체 조문\n{body}"
                     if stars:
                         full_text += f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}"
                     # ★재발방지(2026-07-06): 파일 전용 별표 심층 수집 + 상태 사실 표기
