@@ -29,7 +29,7 @@ MCOL = {"law":"법령명","ministry":"소관부처","date":"시행일자","kind"
 RCOL = {"law":"법령명","article":"근거조문","pref":"우대분류","certs":"관련 종목",
         "t1type":"Track1_취급유형","t1risk":"Track1_위험도","t2":"Track2_효용코드",
         "sjb":"중처법대상","detail":"상세 분석 결과","summary":"조문 요약","rel":"연관도",
-        "eff":"시행일자","reason":"검토사유","links":"조문별 다이렉트 링크","flag":"우대여부"}
+        "eff":"시행일자","reason":"검토사유","links":"조문별 다이렉트 링크","flag":"우대여부","review":"검토필요"}
 PREF_ORDER = ["의무고용","직무권한부여","인사우대","시험면제","기타"]
 PREF_COLOR = {"의무고용":"#C0492F","직무권한부여":"#1F6FB2","인사우대":"#0F6E56","시험면제":"#5B4BB0","기타":"#8A8F98"}
 
@@ -360,7 +360,9 @@ def r_build(rows):
                 continue
             nc = {
                 # k: "공통" = 전 종목 포괄형([전종목] 토큰) / "미특정" = 종목을 특정 못함
-                "k": "공통" if is_scope_all(r.get(RCOL["certs"])) else "미특정",
+                # 공통 확정 표시는 검토필요가 아닐 때만 — 검토필요 O 인 토큰 행은 '미특정(검토 중)' 으로 보수 표기
+                "k": "공통" if (is_scope_all(r.get(RCOL["certs"]))
+                              and str(r.get(RCOL["review"]) or "").strip().upper() != "O") else "미특정",
                 "law": law,
                 "p": str(r.get(RCOL["pref"]) or "").strip() or "기타",
                 "a": str(r.get(RCOL["article"]) or "").strip(),
