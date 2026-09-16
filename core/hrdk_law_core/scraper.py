@@ -65,6 +65,23 @@ def clean_to_markdown(title: str, content: str) -> str:
     return f"### 📜 {title}\n{text}\n"
 
 
+_JOMUN_TEXT_TAGS = ("조문내용", "항내용", "호내용", "목내용")
+
+
+def jomun_full_text(jomun) -> str:
+    """★2026-09-16 조문단위 한 개의 전체 본문.
+    법제처 XML 은 조 머리글(<조문내용>)과 항·호·목(<항내용>/<호내용>/<목내용>) 을 형제·자식 태그로 나눠 준다.
+    종전 코드는 <조문내용>.text 만 읽어 '다음 각 호의 …' 뒤의 각 호(자격 종목 목록이 대부분 여기 있음) 를
+    통째로 버렸다 (실측: 스마트농업 육성법 시행령 항·호·목 129개 중 129개 누락).
+    → 문서 순서(iter = 전위 순회)대로 네 태그의 텍스트를 이어 붙인다. 번호 태그(조문번호·항번호·호번호)는
+      내용 텍스트에 이미 '①', '1.' 로 들어 있으므로 넣지 않는다."""
+    parts = []
+    for el in jomun.iter():
+        if el.tag in _JOMUN_TEXT_TAGS and el.text and el.text.strip():
+            parts.append(el.text.strip())
+    return "\n".join(parts)
+
+
 def norm_law_name(name: str) -> str:
     """법령명 비교용 정규화: 공백·중점·괄호를 제거한 키."""
     return re.sub(r"[\s·ㆍ()（）]", "", str(name or ""))
@@ -215,7 +232,7 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
                     for jomun in detail_root.findall(".//조문단위"):
                         if jomun.attrib.get("조문여부") == "조문":
                             title = (jomun.find("조문제목").text or "") if jomun.find("조문제목") is not None else ""
-                            content = (jomun.find("조문내용").text or "") if jomun.find("조문내용") is not None else ""
+                            content = jomun_full_text(jomun)                 # ★ 조문내용+항+호+목 (종전: 조문내용만)
                             if "제1조(" in title or "목적" in title:
                                 article_1 = clean_to_markdown(title, content)
                             elif "개정" in content or "신설" in content:
@@ -229,8 +246,9 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
                     if changed_articles:
                         full_text += "### 🚨 이번에 바뀐 핵심 조문\n" + "\n".join(changed_articles)
                     else:
-                        body = "\n".join(
-                            j.text.strip() for j in detail_root.findall(".//조문내용") if j.text
+                        body = "\n".join(                                    # ★ 조문단위별 전체 본문 (종전: 조문내용만)
+                            jomun_full_text(j) for j in detail_root.findall(".//조문단위")
+                            if j.attrib.get("조문여부") == "조문"
                         )
                         full_text += f"### 🚨 전체 조문\n{body}"
                     if stars:
