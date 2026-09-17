@@ -15,6 +15,7 @@ import os  # ★2026-07-06 핫픽스: env 상한 읽기용 (docstring 문구에 
 import re
 import time
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -96,6 +97,117 @@ def norm_law_name(name: str) -> str:
     return re.sub(r"[\s·ㆍ()（）]", "", str(name or ""))
 
 
+def _fetch_law_record(api_key: str, session, target_type: str, law_id: str, law_name: str,
+                      enforce_date: str, ministry: str, prom_num: str, prom_date: str) -> dict | None:
+    """★2026-09-16 함수 추출: 법령 한 건의 상세조회 → 조문(각 호 포함)·별표 조립 → 레코드.
+    get_base_laws(일일 수집)와 get_law_version(연혁 판본 취득, 재분석 도구)이 같은 코드를 쓴다.
+    반환 None = 연결 실패(재시도 소진)."""
+    base_law_link = f"https://www.law.go.kr/법령/{law_name}"
+    # ─────────────────────────────────────
+    # 🛡️ 2차 방어: 수동 패자부활전 (상세 조문)
+    # ─────────────────────────────────────
+    detail_url = (
+        f"https://www.law.go.kr/DRF/lawService.do"
+        f"?OC={api_key}&target={target_type}&MST={law_id}&type=XML"
+    )
+    detail_response = None
+    for d_attempt in range(1, 4):
+        try:
+            detail_response = session.get(detail_url, headers=HEADERS, timeout=30)
+            if detail_response.status_code == 200 and detail_response.text.strip():
+                break
+        except Exception as de:
+            if d_attempt == 3:
+                print(f"  ❌ [최종 실패] '{law_name}' 상세 조문 수집 불가: {de}")
+                return None      # 연결 실패 → 호출자가 판단
+            print(f"  ⚠️ [재시도 {d_attempt}/3] '{law_name}' 상세조회 실패. 10초 대기...")
+            time.sleep(10)
+
+    if detail_response is None:
+
+        return None
+
+    # 조문 파싱 및 마크다운 변환
+    detail_root = ET.fromstring(detail_response.text)
+    reason_text = ""
+    for tag in [".//개정이유", ".//제개정이유"]:
+        r_node = detail_root.find(tag)
+        if r_node is not None and r_node.text:
+            reason_text += r_node.text.strip() + "\n"
+
+    article_1, changed_articles = "", []
+    # ★2026-09-16 조문 본문 조립 (두 가지 결함 수정)
+    #  ① 각 호 누락: <조문내용>.text 만 읽어 항·호·목이 빠졌음 → jomun_full_text 로 전체 본문
+    #  ② '조문여부' 는 속성이 아니라 자식 태그(<조문여부>조문</조문여부>) → 종전 attrib 검사는 항상 불일치.
+    #     그래서 '제1조+바뀐 조문만' 분기는 8개월간 한 번도 작동하지 않았고 늘 '전체 조문' 으로 돌았다.
+    #     운영 실동작(전체 조문)을 유지하고, 바뀐 조문은 앞에 '표시' 로만 덧붙인다(개정되지 않은 우대 조문 누락 방지).
+    articles = [j for j in detail_root.findall(".//조문단위") if is_article_unit(j)]
+    body_parts, changed_articles = [], []
+    for jomun in articles:
+        title = (jomun.findtext("조문제목") or "").strip()
+        content = jomun_full_text(jomun)
+        if not content:
+            continue
+        body_parts.append(clean_to_markdown(title, content) if title else content)
+        if "<개정" in content or "<신설" in content or "[신설" in content:
+            changed_articles.append(title or content[:30])
+    body = "\n".join(body_parts)
+    stars = "\n".join(
+        s.text.strip() for s in detail_root.findall(".//별표내용") if s.text
+    )
+    # ★2026-09-16 상한 적용 방식 변경: 종전에는 완성된 원문의 뒤를 잘라 '별표'(맨 뒤)가 먼저 사라졌다.
+    #   → 머리(개정이유·바뀐 조문 표시)와 꼬리(별표 본문·파일 별표·상태)는 항상 살리고, 조문 본문만 상한 안에서 자른다.
+    head_text = f"### 🏢 개정이유\n{reason_text}\n\n"
+    if changed_articles:
+        head_text += "### 🚨 이번에 바뀐 조문(표시)\n" + ", ".join(changed_articles[:40]) + "\n\n"
+    tail_text = f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}" if stars else ""
+    # ★재발방지(2026-07-06): 파일 전용 별표 심층 수집 + 상태 사실 표기
+    try:
+        from .annex import build_annex_sections
+        # ★타르핏 방어(2026-07-16): 해외 IP에 '찔끔 응답'을 주는 서버는
+        #   timeout=30(바이트 간격 기준)을 영원히 안 건드려 수집이 무한 대기함.
+        #   → 파일당 총 소요 예산(벽시계) 초과 시 예외 발생 = annex 안전핀에 합류
+        #     (재시도 1회 → 그래도 초과면 그 별표만 '미확보'로 정직 신고, 배치는 계속)
+        #   ※ 분석 타임아웃 아님 — 법령은 절대 조용히 버려지지 않음(검토필요로 남음).
+        _AX_BUDGET = int(os.environ.get("ANNEX_FETCH_BUDGET", "90"))
+        _ax_sess = requests.Session()          # ★연결·SSL 재사용(파일마다 새 핸드셰이크 방지)
+        _ax_sess.headers.update({"User-Agent": "Mozilla/5.0"})
+        def _ax_get(u, _b=_AX_BUDGET, _s=_ax_sess):
+            import time as _t
+            _t0 = _t.monotonic()
+            _r = _s.get(u, timeout=30, stream=True)
+            _buf = bytearray()
+            for _part in _r.iter_content(chunk_size=65536):
+                if _part:
+                    _buf.extend(_part)
+                if _t.monotonic() - _t0 > _b:
+                    raise TimeoutError(
+                        f"별표 다운로드 예산 초과({_b}s·{len(_buf):,}B 수신)")
+            return bytes(_buf)
+        ax_text, ax_status = build_annex_sections(detail_root, _ax_get, law_name=law_name, api_key=api_key)
+        if ax_text:
+            tail_text += f"\n\n{ax_text}"
+        if ax_status:
+            tail_text += f"\n\n{ax_status}"
+    except Exception as _ax_e:
+        print(f"    ⚠️ 별표 심층수집 건너뜀: {str(_ax_e)[:40]}")
+
+    # 상한(ORIGINAL_MAX_CHARS, 기본 150,000) 은 조문 본문에만 — 별표는 잘리지 않는다.
+    _max = int(os.environ.get("ORIGINAL_MAX_CHARS", "150000"))
+    _budget = max(_max - len(head_text) - len(tail_text) - 200, 20_000)
+    if len(body) > _budget:
+        _cut = len(body) - _budget
+        body = body[:_budget] + f"\n…(조문 본문 뒷부분 {_cut:,}자 생략 — ORIGINAL_MAX_CHARS 상한. 별표는 아래에 전부 포함)"
+        print(f"    ✂️ 조문 본문 {_cut:,}자 생략(상한 {_max:,}) — 별표는 보존")
+    full_text = head_text + f"### 📖 전체 조문\n{body}" + tail_text
+    return {
+        "법령명": law_name, "시행일자": enforce_date,
+        "소관부처": ministry, "공포번호": prom_num,
+        "공포일자": prom_date, "원본": full_text,   # 상한은 위에서 조문 본문에만 적용됨
+        "링크": base_law_link, "스킵여부": False,
+    }
+
+
 def get_base_laws(api_key: str, target_date: str, only_names: set | None = None) -> list | None:
     """
     특정 일자의 시행 법령을 수집·정제합니다.
@@ -140,7 +252,9 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
     all_laws_dict: dict = {}
     is_connection_failed = False  # 🛡️ 3차 방어용 플래그
 
-    for target_type in ["law", "histlaw"]:
+    # ★2026-09-16: 종전 ["law", "histlaw"] 중 "histlaw" 는 법제처 API 에 없는 대상(항상 빈 응답)이라 제거.
+    #   옛 시행일자 판본(연혁)은 get_law_version() 이 target=eflaw 로 찾는다.
+    for target_type in ["law"]:
         page = 1
         while True:
             search_url = (
@@ -205,110 +319,12 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
                         }
                         continue
 
-                    # ─────────────────────────────────────
-                    # 🛡️ 2차 방어: 수동 패자부활전 (상세 조문)
-                    # ─────────────────────────────────────
-                    detail_url = (
-                        f"https://www.law.go.kr/DRF/lawService.do"
-                        f"?OC={api_key}&target={target_type}&MST={law_id}&type=XML"
-                    )
-                    detail_response = None
-                    for d_attempt in range(1, 4):
-                        try:
-                            detail_response = session.get(detail_url, headers=HEADERS, timeout=30)
-                            if detail_response.status_code == 200 and detail_response.text.strip():
-                                break
-                        except Exception as de:
-                            if d_attempt == 3:
-                                print(f"  ❌ [최종 실패] '{law_name}' 상세 조문 수집 불가: {de}")
-                                is_connection_failed = True
-                                break
-                            print(f"  ⚠️ [재시도 {d_attempt}/3] '{law_name}' 상세조회 실패. 10초 대기...")
-                            time.sleep(10)
-
-                    if is_connection_failed or detail_response is None:
+                    rec = _fetch_law_record(api_key, session, target_type, law_id, law_name,
+                                            enforce_date, ministry, prom_num, prom_date)
+                    if rec is None:
+                        is_connection_failed = True
                         break
-
-                    # 조문 파싱 및 마크다운 변환
-                    detail_root = ET.fromstring(detail_response.text)
-                    reason_text = ""
-                    for tag in [".//개정이유", ".//제개정이유"]:
-                        r_node = detail_root.find(tag)
-                        if r_node is not None and r_node.text:
-                            reason_text += r_node.text.strip() + "\n"
-
-                    article_1, changed_articles = "", []
-                    # ★2026-09-16 조문 본문 조립 (두 가지 결함 수정)
-                    #  ① 각 호 누락: <조문내용>.text 만 읽어 항·호·목이 빠졌음 → jomun_full_text 로 전체 본문
-                    #  ② '조문여부' 는 속성이 아니라 자식 태그(<조문여부>조문</조문여부>) → 종전 attrib 검사는 항상 불일치.
-                    #     그래서 '제1조+바뀐 조문만' 분기는 8개월간 한 번도 작동하지 않았고 늘 '전체 조문' 으로 돌았다.
-                    #     운영 실동작(전체 조문)을 유지하고, 바뀐 조문은 앞에 '표시' 로만 덧붙인다(개정되지 않은 우대 조문 누락 방지).
-                    articles = [j for j in detail_root.findall(".//조문단위") if is_article_unit(j)]
-                    body_parts, changed_articles = [], []
-                    for jomun in articles:
-                        title = (jomun.findtext("조문제목") or "").strip()
-                        content = jomun_full_text(jomun)
-                        if not content:
-                            continue
-                        body_parts.append(clean_to_markdown(title, content) if title else content)
-                        if "<개정" in content or "<신설" in content or "[신설" in content:
-                            changed_articles.append(title or content[:30])
-                    body = "\n".join(body_parts)
-                    stars = "\n".join(
-                        s.text.strip() for s in detail_root.findall(".//별표내용") if s.text
-                    )
-                    # ★2026-09-16 상한 적용 방식 변경: 종전에는 완성된 원문의 뒤를 잘라 '별표'(맨 뒤)가 먼저 사라졌다.
-                    #   → 머리(개정이유·바뀐 조문 표시)와 꼬리(별표 본문·파일 별표·상태)는 항상 살리고, 조문 본문만 상한 안에서 자른다.
-                    head_text = f"### 🏢 개정이유\n{reason_text}\n\n"
-                    if changed_articles:
-                        head_text += "### 🚨 이번에 바뀐 조문(표시)\n" + ", ".join(changed_articles[:40]) + "\n\n"
-                    tail_text = f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}" if stars else ""
-                    # ★재발방지(2026-07-06): 파일 전용 별표 심층 수집 + 상태 사실 표기
-                    try:
-                        from .annex import build_annex_sections
-                        # ★타르핏 방어(2026-07-16): 해외 IP에 '찔끔 응답'을 주는 서버는
-                        #   timeout=30(바이트 간격 기준)을 영원히 안 건드려 수집이 무한 대기함.
-                        #   → 파일당 총 소요 예산(벽시계) 초과 시 예외 발생 = annex 안전핀에 합류
-                        #     (재시도 1회 → 그래도 초과면 그 별표만 '미확보'로 정직 신고, 배치는 계속)
-                        #   ※ 분석 타임아웃 아님 — 법령은 절대 조용히 버려지지 않음(검토필요로 남음).
-                        _AX_BUDGET = int(os.environ.get("ANNEX_FETCH_BUDGET", "90"))
-                        _ax_sess = requests.Session()          # ★연결·SSL 재사용(파일마다 새 핸드셰이크 방지)
-                        _ax_sess.headers.update({"User-Agent": "Mozilla/5.0"})
-                        def _ax_get(u, _b=_AX_BUDGET, _s=_ax_sess):
-                            import time as _t
-                            _t0 = _t.monotonic()
-                            _r = _s.get(u, timeout=30, stream=True)
-                            _buf = bytearray()
-                            for _part in _r.iter_content(chunk_size=65536):
-                                if _part:
-                                    _buf.extend(_part)
-                                if _t.monotonic() - _t0 > _b:
-                                    raise TimeoutError(
-                                        f"별표 다운로드 예산 초과({_b}s·{len(_buf):,}B 수신)")
-                            return bytes(_buf)
-                        ax_text, ax_status = build_annex_sections(detail_root, _ax_get, law_name=law_name, api_key=api_key)
-                        if ax_text:
-                            tail_text += f"\n\n{ax_text}"
-                        if ax_status:
-                            tail_text += f"\n\n{ax_status}"
-                    except Exception as _ax_e:
-                        print(f"    ⚠️ 별표 심층수집 건너뜀: {str(_ax_e)[:40]}")
-
-                    # 상한(ORIGINAL_MAX_CHARS, 기본 150,000) 은 조문 본문에만 — 별표는 잘리지 않는다.
-                    _max = int(os.environ.get("ORIGINAL_MAX_CHARS", "150000"))
-                    _budget = max(_max - len(head_text) - len(tail_text) - 200, 20_000)
-                    if len(body) > _budget:
-                        _cut = len(body) - _budget
-                        body = body[:_budget] + f"\n…(조문 본문 뒷부분 {_cut:,}자 생략 — ORIGINAL_MAX_CHARS 상한. 별표는 아래에 전부 포함)"
-                        print(f"    ✂️ 조문 본문 {_cut:,}자 생략(상한 {_max:,}) — 별표는 보존")
-                    full_text = head_text + f"### 📖 전체 조문\n{body}" + tail_text
-
-                    all_laws_dict[law_name] = {
-                        "법령명": law_name, "시행일자": enforce_date,
-                        "소관부처": ministry, "공포번호": prom_num,
-                        "공포일자": prom_date, "원본": full_text,   # 상한은 위에서 조문 본문에만 적용됨
-                        "링크": base_law_link, "스킵여부": False,
-                    }
+                    all_laws_dict[law_name] = rec
                     time.sleep(0.1)
 
                 if is_connection_failed:
@@ -332,3 +348,58 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
         return None
 
     return list(all_laws_dict.values())
+
+
+def get_law_version(api_key: str, law_name: str, enforce_date: str, prom_num: str = "",
+                    session=None):
+    """★2026-09-16 옛 시행일자 판본(연혁) 취득 — 재분석 도구 보조 경로.
+    lawSearch target=eflaw(시행일 법령) 에 법령명으로 검색해 모든 판본을 받고,
+      ① 시행일자 일치 + 공포번호 일치 → ② 시행일자 일치 중 공포일자가 가장 늦은 판본(당시 현행판)
+    을 골라 MST 로 본문을 받는다(_fetch_law_record 공용).
+    반환: dict(성공) / None(연결 실패) / str(사유: 판본 없음 등)"""
+    session = session or _build_session()
+    key = norm_law_name(law_name)
+    want_date = re.sub(r"\D", "", enforce_date or "")[:8]
+    want_num = re.sub(r"\D", "", prom_num or "")
+    cands = []
+    for page in range(1, 6):                       # 판본이 많은 법령도 5페이지(500건)면 충분
+        url = (f"https://www.law.go.kr/DRF/lawSearch.do?OC={api_key}&target=eflaw&type=XML"
+               f"&query={quote(law_name)}&display=100&page={page}")
+        try:
+            r = session.get(url, headers=HEADERS, timeout=30)
+        except Exception as e:
+            print(f"  ❌ 연혁 판본 검색 실패 '{law_name}': {e}")
+            return None
+        if r.status_code != 200 or not r.text.strip():
+            break
+        try:
+            nodes = ET.fromstring(r.text).findall(".//law")
+        except ET.ParseError:
+            break
+        for n in nodes:
+            if norm_law_name(n.findtext("법령명한글", "")) != key:
+                continue
+            cands.append({
+                "mst": n.findtext("법령일련번호", "").strip(),
+                "efYd": re.sub(r"\D", "", n.findtext("시행일자", "")),
+                "prom_num": re.sub(r"\D", "", n.findtext("공포번호", "")),
+                "prom_date": re.sub(r"\D", "", n.findtext("공포일자", "")),
+                "ministry": (n.findtext("소관부처명", "") or "알 수 없음").strip(),
+                "status": n.findtext("현행연혁코드", "").strip(),
+            })
+        if len(nodes) < 100:
+            break
+    if not cands:
+        return "eflaw 검색에 법령명 없음(명칭 변경·폐지 의심)"
+    same = [c for c in cands if c["efYd"] == want_date and c["mst"]]
+    if not same:
+        dates = sorted({c["efYd"] for c in cands}, reverse=True)[:6]
+        return f"시행일자 {want_date} 판본 없음 (있는 시행일자: {', '.join(dates)})"
+    pick = next((c for c in same if want_num and c["prom_num"].lstrip("0") == want_num.lstrip("0")), None)
+    if pick is None:
+        pick = max(same, key=lambda c: c["prom_date"])   # 같은 날 여러 판본 → 공포일자 가장 늦은 것
+    rec = _fetch_law_record(api_key, session, "law", pick["mst"], law_name, pick["efYd"],
+                            pick["ministry"], pick["prom_num"], pick["prom_date"])
+    if rec is not None:
+        rec["판본출처"] = f"eflaw MST={pick['mst']} [{pick['status']}] 공포 {pick['prom_date']} 제{pick['prom_num']}호"
+    return rec
