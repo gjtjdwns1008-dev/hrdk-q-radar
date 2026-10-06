@@ -58,4 +58,5 @@ jobs:
           LLM_THINKING_LEVEL: "medium"          # low | medium | high  (minimal 은 3.8에서 400 오류 — 코드가 무시 처리)
           WORKNET_ENABLED: "0"                  # 워크넷 실시간 조회 배제 결정('26.9.16) — 대장에 "미조회(OFF)" 기록. 켤 때 "1"
           ORIGINAL_MAX_CHARS: "400000"          # 조문 본문 상한(글자). 별표는 상한과 무관하게 전부 포함. 로컬 재분석 도구(.env)와 같은 값으로 유지
+          ANNEX_MAX_FILES: "200"               # ★2026-10-06 별표·서식 파일 시도 상한(법령당). 10/3~ 서식 수천 개 다운로드로 150분 초과 침몰 → 지혈. 초과분은 '파일 수 밸브 — 미확보'로 정직 신고. 0=무제한(종전)
         run: python pipeline/main.py
