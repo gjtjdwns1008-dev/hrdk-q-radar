@@ -57,6 +57,22 @@ def _build_session() -> requests.Session:
     return session
 
 
+# ★v2.2(2026-10-07) 법령 단위 수집 실패 격리
+FAIL_STREAK_LIMIT = int(os.environ.get("FETCH_FAIL_STREAK", "5"))   # 연속 N건 실패 = 법제처 장애로 판단 → 그 날짜 실패(🔴)
+
+
+def _failed_record(law_name, enforce_date, ministry, prom_num, prom_date, link, err):
+    """본문을 끝내 못 받은 법령의 레코드. 보류(스킵) 흐름을 타서 보류목록 시트에 '수집 실패' 사유로 남고,
+    통합 대장에는 'AI 분석 보류(수집 실패…)' 로 적힌다. 재수집(수동 재실행·재분석 도구)의 upsert 가 이 행을 덮어쓴다."""
+    reason = f"수집 실패 — 법제처 응답 비정상(3회 재시도: {err}) · 재수집 필요"
+    return {
+        "법령명": law_name, "시행일자": enforce_date, "소관부처": ministry,
+        "공포번호": prom_num, "공포일자": prom_date,
+        "원본": "원문 수집 실패(법제처 응답 비정상) — AI 분석 미실시",
+        "링크": link, "스킵여부": True, "스킵사유": reason, "수집실패": True,
+    }
+
+
 def clean_to_markdown(title: str, content: str) -> str:
     """조문 텍스트를 마크다운으로 정제해 AI 가독성을 높입니다."""
     if not content:
@@ -101,7 +117,7 @@ def _fetch_law_record(api_key: str, session, target_type: str, law_id: str, law_
                       enforce_date: str, ministry: str, prom_num: str, prom_date: str) -> dict | None:
     """★2026-09-16 함수 추출: 법령 한 건의 상세조회 → 조문(각 호 포함)·별표 조립 → 레코드.
     get_base_laws(일일 수집)와 get_law_version(연혁 판본 취득, 재분석 도구)이 같은 코드를 쓴다.
-    반환 None = 연결 실패(재시도 소진)."""
+    반환: 레코드 dict. ★v2.2 수집 실패 시에도 dict 를 돌려주되 스킵여부=True·수집실패=True 로 표시(None 반환 없음)."""
     base_law_link = f"https://www.law.go.kr/법령/{law_name}"
     # ─────────────────────────────────────
     # 🛡️ 2차 방어: 수동 패자부활전 (상세 조문)
@@ -110,25 +126,28 @@ def _fetch_law_record(api_key: str, session, target_type: str, law_id: str, law_
         f"https://www.law.go.kr/DRF/lawService.do"
         f"?OC={api_key}&target={target_type}&MST={law_id}&type=XML"
     )
-    detail_response = None
+    # ★v2.2(2026-10-07) 빈 응답·깨진 XML(no element found) 도 재시도 대상. 3회 실패 → '수집 실패' 레코드 반환.
+    #   종전: 빈 응답(200 OK, 본문 없음)은 ET.fromstring 에서 예외 → get_base_laws 의 바깥 except 로 튀어
+    #   그날 '남은 법령 전부'가 버려졌다(10/2: 370건 중 123건 미처리). 이제 실패는 그 법령 한 건에만 머문다.
+    detail_root, last_err = None, ""
     for d_attempt in range(1, 4):
         try:
             detail_response = session.get(detail_url, headers=HEADERS, timeout=30)
-            if detail_response.status_code == 200 and detail_response.text.strip():
-                break
+            if detail_response.status_code != 200 or not detail_response.text.strip():
+                raise ValueError(f"HTTP {detail_response.status_code} 또는 빈 응답")
+            detail_root = ET.fromstring(detail_response.text)
+            break
         except Exception as de:
-            if d_attempt == 3:
-                print(f"  ❌ [최종 실패] '{law_name}' 상세 조문 수집 불가: {de}")
-                return None      # 연결 실패 → 호출자가 판단
-            print(f"  ⚠️ [재시도 {d_attempt}/3] '{law_name}' 상세조회 실패. 10초 대기...")
-            time.sleep(10)
-
-    if detail_response is None:
-
-        return None
+            last_err = str(de)[:60]
+            if d_attempt < 3:
+                print(f"  ⚠️ [재시도 {d_attempt}/3] '{law_name}' 상세조회 실패({last_err}). 10초 대기...")
+                time.sleep(10)
+    if detail_root is None:
+        print(f"  ❌ [수집 실패] '{law_name}' — 3회 재시도 후에도 본문을 못 받음({last_err})"
+              f" → '수집 실패'로 기록하고 다음 법령으로 진행")
+        return _failed_record(law_name, enforce_date, ministry, prom_num, prom_date, base_law_link, last_err)
 
     # 조문 파싱 및 마크다운 변환
-    detail_root = ET.fromstring(detail_response.text)
     reason_text = ""
     for tag in [".//개정이유", ".//제개정이유"]:
         r_node = detail_root.find(tag)
@@ -152,9 +171,24 @@ def _fetch_law_record(api_key: str, session, target_type: str, law_id: str, law_
         if "<개정" in content or "<신설" in content or "[신설" in content:
             changed_articles.append(title or content[:30])
     body = "\n".join(body_parts)
-    stars = "\n".join(
-        s.text.strip() for s in detail_root.findall(".//별표내용") if s.text
-    )
+    # ★v2.2(2026-10-07) 별표 본문 조립: <별표단위> 기준으로 읽고 <별표구분>이 '서식'(행정 양식)이면 프롬프트에서 제외.
+    #   근거: 우대 2,056건 중 서식이 자격 요건의 출처였던 경우 0건, 프롬프트 규칙도 서식류를 비(非)자격으로 취급.
+    #   효과: 법령당 수만~수십만 자의 양식 글자가 빠져 입력 토큰 급감(국가기술자격법 시행규칙 서식 39개 ≈ 20만 자).
+    #   별표단위가 없는 옛 구조 XML 은 종전대로 <별표내용> 전체.
+    _units = detail_root.findall(".//별표단위")
+    if _units:
+        _parts, _n_form = [], 0
+        for _u in _units:
+            _kind = (_u.findtext("별표구분") or "").strip()
+            if ("서식" in _kind) or ("별지" in _kind):
+                _n_form += 1
+                continue
+            _c = (_u.findtext("별표내용") or "").strip()
+            if _c:
+                _parts.append(_c)
+        stars = "\n".join(_parts)
+    else:
+        stars = "\n".join(s.text.strip() for s in detail_root.findall(".//별표내용") if s.text)
     # ★2026-09-16 상한 적용 방식 변경: 종전에는 완성된 원문의 뒤를 잘라 '별표'(맨 뒤)가 먼저 사라졌다.
     #   → 머리(개정이유·바뀐 조문 표시)와 꼬리(별표 본문·파일 별표·상태)는 항상 살리고, 조문 본문만 상한 안에서 자른다.
     head_text = f"### 🏢 개정이유\n{reason_text}\n\n"
@@ -252,6 +286,7 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
     all_laws_dict: dict = {}
     is_connection_failed = False  # 🛡️ 3차 방어용 플래그
 
+    consecutive_fail = 0
     # ★2026-09-16: 종전 ["law", "histlaw"] 중 "histlaw" 는 법제처 API 에 없는 대상(항상 빈 응답)이라 제거.
     #   옛 시행일자 판본(연혁)은 get_law_version() 이 target=eflaw 로 찾는다.
     for target_type in ["law"]:
@@ -264,87 +299,99 @@ def get_base_laws(api_key: str, target_date: str, only_names: set | None = None)
             )
 
             # ─────────────────────────────────────
-            # 🛡️ 2차 방어: 수동 패자부활전 (목록 조회)
+            # 🛡️ 2차 방어: 수동 패자부활전 (목록 조회) — ★v2.2 깨진 XML 도 재시도
             # ─────────────────────────────────────
-            response = None
+            root = None
             for attempt in range(1, 4):
                 try:
                     response = session.get(search_url, headers=HEADERS, timeout=30)
-                    if response.status_code == 200:
-                        break
+                    if response.status_code != 200:
+                        raise ValueError(f"HTTP {response.status_code}")
+                    if not response.text.strip():
+                        raise ValueError("빈 응답")
+                    root = ET.fromstring(response.text)
+                    break
                 except Exception as e:
                     if attempt == 3:
-                        print(f"  ❌ [최종 실패] 법령 목록 조회 불능: {e}")
+                        print(f"  ❌ [최종 실패] 법령 목록 {page}페이지 조회 불능: {str(e)[:60]}")
                         is_connection_failed = True
                         break
-                    print(f"  ⚠️ [재시도 {attempt}/3] 목록 수집 실패. 20초 대기 후 재시도...")
+                    print(f"  ⚠️ [재시도 {attempt}/3] 목록 {page}페이지 수집 실패({str(e)[:40]}). 20초 대기 후 재시도...")
                     time.sleep(20)
-
-            if is_connection_failed or response is None:
-                break
-            if not response.text.strip() or response.status_code != 200:
+            if is_connection_failed or root is None:
                 break
 
-            try:
-                root = ET.fromstring(response.text)
-                law_nodes = root.findall(".//law")
-                if not law_nodes:
-                    break
+            law_nodes = root.findall(".//law")
+            if not law_nodes:
+                break
 
-                for law in law_nodes:
-                    law_id = law.findtext("법령일련번호", "")
-                    law_name = law.findtext("법령명한글", "").strip()
-                    enforce_date = law.findtext("시행일자", "")
-                    ministry = law.findtext("소관부처명", "알 수 없음").strip()
-                    prom_num = re.sub(r"\D", "", law.findtext("공포번호", ""))
-                    prom_date = law.findtext("공포일자", "").strip()
+            for law in law_nodes:
+                law_id = law.findtext("법령일련번호", "")
+                law_name = law.findtext("법령명한글", "").strip()
+                enforce_date = law.findtext("시행일자", "")
+                ministry = law.findtext("소관부처명", "알 수 없음").strip()
+                prom_num = re.sub(r"\D", "", law.findtext("공포번호", ""))
+                prom_date = law.findtext("공포일자", "").strip()
 
-                    if not law_id or law_name in all_laws_dict:
-                        continue
-                    if only_names is not None and norm_law_name(law_name) not in only_names:
-                        continue   # 재분석 대상 아님 — 원문 수집 생략
+                if not law_id or law_name in all_laws_dict:
+                    continue
+                if only_names is not None and norm_law_name(law_name) not in only_names:
+                    continue   # 재분석 대상 아님 — 원문 수집 생략
 
-                    base_law_link = f"https://www.law.go.kr/법령/{law_name}"
+                base_law_link = f"https://www.law.go.kr/법령/{law_name}"
 
-                    # 스킵 키워드 필터 (버리지 않는 체: 사유를 함께 기록)
-                    matched_kw = next((k for k in SKIP_KEYWORDS if k in law_name), None)
-                    if matched_kw:
-                        all_laws_dict[law_name] = {
-                            "법령명": law_name, "시행일자": enforce_date,
-                            "소관부처": ministry, "공포번호": prom_num,
-                            "공포일자": prom_date,
-                            "원본": "조직/기구 관련 법령으로 AI 분석 생략",
-                            "링크": base_law_link, "스킵여부": True,
-                            "스킵사유": f"보류 키워드 '{matched_kw}' 일치",
-                        }
-                        continue
+                # 스킵 키워드 필터 (버리지 않는 체: 사유를 함께 기록)
+                matched_kw = next((k for k in SKIP_KEYWORDS if k in law_name), None)
+                if matched_kw:
+                    all_laws_dict[law_name] = {
+                        "법령명": law_name, "시행일자": enforce_date,
+                        "소관부처": ministry, "공포번호": prom_num,
+                        "공포일자": prom_date,
+                        "원본": "조직/기구 관련 법령으로 AI 분석 생략",
+                        "링크": base_law_link, "스킵여부": True,
+                        "스킵사유": f"보류 키워드 '{matched_kw}' 일치",
+                    }
+                    continue
 
+                # ★v2.2 법령 단위 격리: 어떤 예외도 그 법령 한 건의 '수집 실패'로 끝나고 다음 법령으로 간다.
+                #   (종전: 한 건의 빈 응답이 바깥 except 로 튀어 그날 남은 법령 전부를 버리고 '성공'으로 통과 — 10/2 123건 미처리)
+                print(f"  📄 {law_name}")
+                try:
                     rec = _fetch_law_record(api_key, session, target_type, law_id, law_name,
                                             enforce_date, ministry, prom_num, prom_date)
-                    if rec is None:
+                except Exception as fe:
+                    print(f"  ❌ [수집 실패] '{law_name}' — 처리 예외 {str(fe)[:60]} → '수집 실패'로 기록, 다음 법령 진행")
+                    rec = _failed_record(law_name, enforce_date, ministry, prom_num, prom_date,
+                                         base_law_link, f"처리 예외 {str(fe)[:40]}")
+                if rec is None:   # 하위호환(구판 신호)
+                    rec = _failed_record(law_name, enforce_date, ministry, prom_num, prom_date,
+                                         base_law_link, "연결 실패")
+                if rec.get("수집실패"):
+                    consecutive_fail += 1
+                    if consecutive_fail >= FAIL_STREAK_LIMIT:
+                        print(f"  ❌ [최종 실패] 연속 {consecutive_fail}건 수집 실패 → 법제처 장애로 판단."
+                              f" 이 날짜는 실패(🔴) 처리하고 다음 크론이 재시도한다(부분 목록을 성공으로 넘기지 않음)")
                         is_connection_failed = True
                         break
-                    all_laws_dict[law_name] = rec
-                    time.sleep(0.1)
+                else:
+                    consecutive_fail = 0
+                all_laws_dict[law_name] = rec
+                time.sleep(0.1)
 
-                if is_connection_failed:
-                    break
-                if len(law_nodes) < 100:
-                    break
-                page += 1
-
-            except Exception as e:
-                print(f"⚠️ 법령 데이터 파싱 중 크리티컬 에러: {e}")
-                is_connection_failed = True
+            if is_connection_failed:
                 break
+            if len(law_nodes) < 100:
+                break
+            page += 1
 
         if is_connection_failed:
             break
 
     # ─────────────────────────────────────────────────
-    # 🛡️ 3차 방어: 네트워크 실패 시 None 반환 (0건 가짜 리포트 차단)
+    # 🛡️ 3차 방어: 목록·연속 수집 실패 시 None 반환 (0건 가짜 리포트 + ★부분 목록 가짜 성공 모두 차단)
+    #   종전에는 '이미 모은 게 있으면' 부분 목록을 성공으로 넘겼다 → 조용한 잘림. 이제 날짜 실패(🔴)로 시끄럽게 남긴다.
     # ─────────────────────────────────────────────────
-    if is_connection_failed and not all_laws_dict:
+    if is_connection_failed:
         return None
 
     return list(all_laws_dict.values())
@@ -400,6 +447,8 @@ def get_law_version(api_key: str, law_name: str, enforce_date: str, prom_num: st
         pick = max(same, key=lambda c: c["prom_date"])   # 같은 날 여러 판본 → 공포일자 가장 늦은 것
     rec = _fetch_law_record(api_key, session, "law", pick["mst"], law_name, pick["efYd"],
                             pick["ministry"], pick["prom_num"], pick["prom_date"])
+    if rec is not None and rec.get("수집실패"):              # ★v2.2
+        return f"원문 수집 실패: {rec.get('스킵사유', '')}"
     if rec is not None:
         rec["판본출처"] = f"eflaw MST={pick['mst']} [{pick['status']}] 공포 {pick['prom_date']} 제{pick['prom_num']}호"
     return rec
