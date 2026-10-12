@@ -57,6 +57,48 @@ def _build_session() -> requests.Session:
     return session
 
 
+# ★v2.3(2026-10-07) 상한 초과 시 보존 우선순위 — 이 단어가 든 조문은 마지막까지 남긴다 (env TRIM_KEEP_WORDS 로 조정 가능)
+TRIM_KEEP = re.compile(os.environ.get(
+    "TRIM_KEEP_WORDS",
+    r"자격|면허|기술사|기능장|기사|기능사|기술인|기술자|선임|배치|인력|관리자|감리"))
+TRIM_LIST_MAX = 30      # 생략 조문 제목을 본문 안내문에 몇 개까지 열거할지
+
+
+def trim_body_keep_qualification(art_items, budget: int):
+    """조문 목록을 budget 글자 안으로 줄인다. 반환 (본문, 로그 한 줄).
+    1단계: 자격 관련 단어가 없는 조문을 뒤쪽부터 덜어냄(조문 단위, 앞쪽 총적·정의 조문은 자연히 보존)
+    2단계: 그래도 넘치면 남은 본문의 뒷부분을 자름(종전 방식)
+    생략한 조문 제목은 본문 끝 안내문에 열거(최대 TRIM_LIST_MAX개) — 사람과 모델이 무엇이 빠졌는지 알 수 있게."""
+    keep = [True] * len(art_items)
+    total = sum(len(md) for md, _, _ in art_items) + max(len(art_items) - 1, 0)
+    dropped = []
+    for i in range(len(art_items) - 1, -1, -1):
+        if total <= budget:
+            break
+        md, has_kw, title = art_items[i]
+        if has_kw:
+            continue
+        keep[i] = False
+        total -= len(md) + 1
+        dropped.append(title)
+    parts = [md for (md, _, _), k in zip(art_items, keep) if k]
+    body = "\n".join(parts)
+    kept_kw = sum(1 for (_, has_kw, _), k in zip(art_items, keep) if k and has_kw)
+    notes, log = [], []
+    if dropped:
+        shown = ", ".join(reversed(dropped[-TRIM_LIST_MAX:])) if len(dropped) <= TRIM_LIST_MAX \
+            else ", ".join(reversed(dropped[-TRIM_LIST_MAX:])) + f" 외 {len(dropped) - TRIM_LIST_MAX}개"
+        notes.append(f"…(ORIGINAL_MAX_CHARS 상한 초과로 자격 관련 단어가 없는 조문 {len(dropped)}개 생략 — {shown}. "
+                     f"자격 관련 조문 {kept_kw}개는 전부 보존, 별표는 아래에 전부 포함)")
+        log.append(f"조문 {len(dropped)}개 생략(자격 단어 없음) · 자격 관련 조문 {kept_kw}개 보존")
+    if len(body) > budget:
+        cut = len(body) - budget
+        body = body[:budget]
+        notes.append(f"…(그래도 상한 초과 — 남은 조문 본문 뒷부분 {cut:,}자 추가 생략)")
+        log.append(f"뒷부분 {cut:,}자 추가 생략")
+    return body + ("\n" + "\n".join(notes) if notes else ""), " · ".join(log) or "생략 없음"
+
+
 # ★v2.2(2026-10-07) 법령 단위 수집 실패 격리
 FAIL_STREAK_LIMIT = int(os.environ.get("FETCH_FAIL_STREAK", "5"))   # 연속 N건 실패 = 법제처 장애로 판단 → 그 날짜 실패(🔴)
 
@@ -162,12 +204,15 @@ def _fetch_law_record(api_key: str, session, target_type: str, law_id: str, law_
     #     운영 실동작(전체 조문)을 유지하고, 바뀐 조문은 앞에 '표시' 로만 덧붙인다(개정되지 않은 우대 조문 누락 방지).
     articles = [j for j in detail_root.findall(".//조문단위") if is_article_unit(j)]
     body_parts, changed_articles = [], []
+    art_items = []          # ★v2.3 (조문 md, 자격 관련 단어 포함 여부, 표시용 제목) — 상한 초과 시 선별 생략용
     for jomun in articles:
         title = (jomun.findtext("조문제목") or "").strip()
         content = jomun_full_text(jomun)
         if not content:
             continue
-        body_parts.append(clean_to_markdown(title, content) if title else content)
+        md = clean_to_markdown(title, content) if title else content
+        body_parts.append(md)
+        art_items.append((md, bool(TRIM_KEEP.search(title + "\n" + content)), title or content[:20]))
         if "<개정" in content or "<신설" in content or "[신설" in content:
             changed_articles.append(title or content[:30])
     body = "\n".join(body_parts)
@@ -226,13 +271,18 @@ def _fetch_law_record(api_key: str, session, target_type: str, law_id: str, law_
     except Exception as _ax_e:
         print(f"    ⚠️ 별표 심층수집 건너뜀: {str(_ax_e)[:40]}")
 
-    # 상한(ORIGINAL_MAX_CHARS, 기본 150,000) 은 조문 본문에만 — 별표는 잘리지 않는다.
-    _max = int(os.environ.get("ORIGINAL_MAX_CHARS", "150000"))
+    # 상한(ORIGINAL_MAX_CHARS, 기본 800,000) 은 조문 본문에만 — 별표는 잘리지 않는다.
+    # ★v2.3(2026-10-07) 자격 우선 보존 트리밍: 상한을 넘으면 '뒤에서부터' 자르지 않고,
+    #   자격 관련 단어(TRIM_KEEP: 자격·면허·기술사·기능장·기사·기능사·선임·배치·인력…)가 없는 조문을
+    #   뒤쪽부터 통째로 덜어낸다(조문 경계 유지). 그래도 넘치면 종전처럼 남은 본문의 뒷부분을 자른다.
+    #   근거: 자격 요건 조문은 뒤쪽에도 있다(자동차관리법 시행규칙 제132조 정비책임자 자격 등) — 뒷부분 일괄 절단은 그 조문을 지운다.
+    #   ★기본값 150,000 → 800,000 (2026-10-07): 로컬 도구의 .env 에는 이 변수가 없어 로컬 재분석·재백필이 150,000자에서
+    #   잘리고 있었음(운영 yml은 400,000). 코드 기본값 = 운영값으로 맞춰 .env 가 없어도 같은 결과가 나오게 한다.
+    _max = int(os.environ.get("ORIGINAL_MAX_CHARS", "800000"))
     _budget = max(_max - len(head_text) - len(tail_text) - 200, 20_000)
     if len(body) > _budget:
-        _cut = len(body) - _budget
-        body = body[:_budget] + f"\n…(조문 본문 뒷부분 {_cut:,}자 생략 — ORIGINAL_MAX_CHARS 상한. 별표는 아래에 전부 포함)"
-        print(f"    ✂️ 조문 본문 {_cut:,}자 생략(상한 {_max:,}) — 별표는 보존")
+        body, _trim_log = trim_body_keep_qualification(art_items, _budget)
+        print(f"    ✂️ {_trim_log} (상한 {_max:,}) — 별표는 보존")
     full_text = head_text + f"### 📖 전체 조문\n{body}" + tail_text
     return {
         "법령명": law_name, "시행일자": enforce_date,

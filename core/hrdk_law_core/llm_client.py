@@ -30,6 +30,22 @@ from abc import ABC, abstractmethod
 # ──────────────────────────────────────────────────────────
 # 공통 인터페이스: 모든 LLM 어댑터는 이 형태를 따른다
 # ──────────────────────────────────────────────────────────
+def is_input_too_long(err) -> bool:
+    """★2026-10-07 모델이 '입력이 너무 길다'고 거부한 오류인가. 공급사별 문구 차이를 흡수한다.
+    Gemini: "input token count (…) exceeds the maximum number of tokens allowed" (400 INVALID_ARGUMENT)
+    OpenAI 계열: "maximum context length is … tokens" / Anthropic: "prompt is too long: … tokens" """
+    m = str(err).lower()
+    # 쿼터·속도 제한(429/quota/rate)은 '기다리면 풀리는' 오류 — 입력 초과로 오인하지 않는다
+    if any(k in m for k in ("429", "quota", "rate limit", "rate_limit", "per minute", "resource_exhausted", "resource exhausted")):
+        return False
+    markers = ("input token count", "exceeds the maximum number of tokens", "maximum context length",
+               "context length", "context_length", "context window", "prompt is too long",
+               "input is too long", "too many tokens", "request too large")
+    if any(k in m for k in markers):
+        return True
+    return "token" in m and ("too long" in m or "exceeds the maximum" in m)
+
+
 class LLMClient(ABC):
     """모든 LLM 프로바이더가 구현해야 하는 공통 규격."""
 
@@ -63,6 +79,10 @@ class LLMClient(ABC):
             except Exception as e:
                 last_err = e
                 msg = str(e).lower()
+                if is_input_too_long(e):
+                    # ★2026-10-07 입력(토큰) 한도 초과는 기다려도 안 풀리는 결정적 오류 → 즉시 올려서 호출자가 본문을 줄여 재시도하게
+                    print(f"\n    🚨 [입력 한도 초과] 재시도 없이 반환: {str(e)[:60]}", end="", flush=True)
+                    raise
                 if "503" in msg or "high demand" in msg or "overload" in msg:
                     wait = 60 * (attempt + 1)
                     print(f"\n    🚨 [서버 폭주] {wait}초 대기 후 재시도...", end="", flush=True)
