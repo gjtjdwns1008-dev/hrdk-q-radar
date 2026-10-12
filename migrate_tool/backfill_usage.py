@@ -66,6 +66,10 @@ for _k in ("GEMINI_API_KEY", "LLM_PROVIDER", "LLM_MODEL"):
 
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+# ★2026-10-07 레포의 core/ 를 '경로로 직접' 연결 — 종전에는 pip 설치본(구판일 수 있음)을 불러왔다.
+#   (reanalyze_ledger/run.py 와 같은 방식. 레포 폴더에 core/hrdk_law_core 가 있어야 하며, 없으면 설치본으로 폴백)
+if (REPO / "core" / "hrdk_law_core").exists() and str(REPO / "core") not in sys.path:
+    sys.path.insert(0, str(REPO / "core"))
 
 
 # ── 재시도 갑옷 (backfill_summary v2.1 계승) ────────────────────────────
