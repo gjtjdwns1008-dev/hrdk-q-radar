@@ -173,6 +173,36 @@ def _apply_review_guards(info):
     return info
 
 
+def _is_too_long(err) -> bool:
+    try:
+        from hrdk_law_core.llm_client import is_input_too_long
+        return is_input_too_long(err)
+    except Exception:
+        m = str(err).lower()
+        if any(k in m for k in ("429", "quota", "rate limit", "per minute", "resource_exhausted")):
+            return False
+        return "token" in m and ("too long" in m or "exceeds the maximum" in m or "context length" in m)
+
+
+def _shrink_article_body(text: str):
+    """원문에서 '### 📖 전체 조문' 구간(별표 꼬리 앞까지)만 절반으로 줄인다. 반환 (새 원문, 줄인 글자 수)."""
+    head_mark, tail_mark = "### 📖 전체 조문\n", "\n\n### ⭐ 별표"
+    bs = text.find(head_mark)
+    if bs < 0:
+        return text, 0
+    bs += len(head_mark)
+    be = text.find(tail_mark, bs)
+    if be < 0:
+        be = len(text)
+    body = text[bs:be]
+    half = max(len(body) // 2, 20_000)
+    if len(body) <= half:
+        return text, 0
+    cut = len(body) - half
+    new_body = body[:half] + f"\n…(모델 입력 한도 초과로 조문 본문 뒷부분 {cut:,}자 추가 생략 — 별표는 아래에 전부 포함)"
+    return text[:bs] + new_body + text[be:], cut
+
+
 def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     # 🌟 [Q-RADAR 통합 프롬프트 · 2026-09-16 개정] — 연관도 문언 기준·우대 근거 문언·연동표·포괄 토큰 반영
     prompt = f"""
@@ -381,6 +411,14 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
             json_mode=True,           # ★2026-09-16: JSON 형식 강제 (분석 전용)
         )
     except Exception as e:
+        # ★2026-10-07 입력 한도 초과 폴백: 머리(개정이유)·꼬리(별표)는 두고 '조문 본문'만 절반으로 줄여 딱 1회 재시도.
+        #   (상한 ORIGINAL_MAX_CHARS 를 올린 뒤에도 100만 자 넘는 법령이 모델 한도에 걸릴 때의 안전장치)
+        if _is_too_long(e) and not law.get("_입력축소") and "### 📖 전체 조문" in str(law.get("원본", "")):
+            shrunk = dict(law)
+            shrunk["_입력축소"] = True
+            shrunk["원본"], _cut = _shrink_article_body(str(law.get("원본", "")))
+            print(f"\n    ✂️ [입력 한도 초과] 조문 본문 {_cut:,}자 추가 생략 후 1회 재시도", end="", flush=True)
+            return run_ai_analysis(shrunk, qnet_certs_text, attempt_count=2)
         return False, "", {"error": str(e)}
 
     # ── 응답 파싱 (두 시스템 공통 로직 계승) ──
