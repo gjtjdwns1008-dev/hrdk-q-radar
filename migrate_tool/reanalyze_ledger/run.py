@@ -78,8 +78,8 @@ def preflight() -> bool:
         print(f"  ✗ pipeline/brain.py 를 불러올 수 없습니다: {e}"); ok = False
     m, lv = os.environ.get("LLM_MODEL", ""), os.environ.get("LLM_THINKING_LEVEL", "")
     if not m or not lv:
-        print(f"  ⚠ .env 에 {'LLM_MODEL ' if not m else ''}{'LLM_THINKING_LEVEL ' if not lv else ''}이(가) 없습니다."
-              " 기본값(3.5-flash·thinking 미지정)으로 돌아갑니다. 3.8 로 돌리려면 .env 에 두 줄을 추가하세요:\n"
+        print(f"  ⚠ local_run/local.env 에 {'LLM_MODEL ' if not m else ''}{'LLM_THINKING_LEVEL ' if not lv else ''}이(가) 없습니다."
+              " 기본값(3.5-flash·thinking 미지정)으로 돌아갑니다. 3.8 로 돌리려면 local_run/local.env 에 두 줄을 추가하세요:\n"
               "     LLM_MODEL=gemini-3.8-flash\n     LLM_THINKING_LEVEL=medium")
         if len(sys.argv) == 1:
             ans = input("  그래도 기본 모델로 계속할까요? (y = 계속, 그 외 = 중단): ").strip().lower()
@@ -189,7 +189,7 @@ def main():
         sys.exit(1)
     os.environ.setdefault("WORKNET_ENABLED", "0")                 # 결정('26.9.16): 실시간 조회 배제
     if not preflight():
-        print("⛔ 사전 점검 실패 — 위 안내대로 파일·.env 를 고친 뒤 다시 실행하세요."); sys.exit(1)
+        print("⛔ 사전 점검 실패 — 위 안내대로 파일·local_run/local.env 를 고친 뒤 다시 실행하세요."); sys.exit(1)
 
     tp = Path(args.targets) if args.targets else sorted(C.WORK.glob("대상목록_*.xlsx"))[-1]
     import pandas as pd

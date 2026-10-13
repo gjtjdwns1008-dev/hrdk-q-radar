@@ -4,7 +4,7 @@
 분석 로직은 여기 없고 core(scraper·brain·certs)를 그대로 부릅니다. 시트에 쓰는 코드는 `apply.py` 한 곳뿐입니다.
 
 ## 준비 (1회)
-1. `env.example` → `.env` 복사 후 값 채우기, 같은 폴더에 `gcp-key.json` (둘 다 깃허브 금지 — `.gitignore` 포함)
+1. `env.example` 의 항목을 **레포 루트 `local_run/local.env`** 에 채우기, 같은 폴더(`local_run/`)에 `gcp-key.json` (둘 다 깃허브 금지 — 루트 `.gitignore` 가 차단) ※ 2026-10-13 열쇠 단일화: 이 폴더에는 `.env`·키 파일을 두지 않음
 2. 로컬 백필 때 쓰던 파이썬 환경(hrdk-law-core 설치됨)에서 실행. 법제처 차단을 피하려면 **국내 IP**에서.
 
 ## 가장 쉬운 방법 — `start.py` 를 ▶ 버튼으로 실행

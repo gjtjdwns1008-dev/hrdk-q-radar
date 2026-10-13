@@ -17,6 +17,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent.parent / "local_run"   # migrate_tool/<이 폴더> → 레포 루트
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 PY = sys.executable                     # 지금 이 파일을 실행한 파이썬 그대로 사용
 
 MENU = """
@@ -55,10 +60,10 @@ def open_work():
 
 def main():
     os.chdir(HERE)
-    if not (HERE / ".env").exists():
-        print("⚠️ .env 가 없습니다. env.example 을 복사해 .env 로 만들고 값을 채워 주세요.")
-    if not (HERE / "gcp-key.json").exists():
-        print("⚠️ gcp-key.json 이 없습니다. 이 폴더에 서비스 계정 키 파일을 두세요.")
+    if not ENV_FILE.exists():
+        print(f"⚠️ local.env 가 없습니다: {ENV_FILE}  (env.example 의 항목을 레포 루트 local_run/local.env 에 채워 주세요)")
+    if not KEY_FILE.exists():
+        print(f"⚠️ gcp-key.json 이 없습니다: {KEY_FILE}  (서비스 계정 키 파일을 레포 루트 local_run 폴더에 두세요)")
     while True:
         print(MENU)
         ch = input("번호 선택: ").strip()

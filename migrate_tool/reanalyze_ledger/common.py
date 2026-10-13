@@ -3,7 +3,7 @@
 Q-RADAR 대장 재분석 도구 — 공통 모듈  (2026-09-16 신설)
 ========================================================
 scan.py / run.py / apply.py 가 함께 쓰는 것들:
-  · .env / gcp-key.json 로드 (기존 migrate_tool 규약 그대로)
+  · local.env / gcp-key.json 로드 — 레포 루트 local_run/ 한 곳 (2026-10-13 열쇠 단일화)
   · 대장(국가기술자격 관련법령 탭) 읽기 — 구글 시트 또는 LOCAL_XLSX(오프라인 검토·테스트)
   · 컬럼 정의: 고정 키 4열(MST_ID·시행일자·소관부처·법령명) / 분석 산출 20열
   · 산출물 폴더(work/) 경로
@@ -22,6 +22,11 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent.parent / "local_run"   # migrate_tool/<이 폴더> → 레포 루트
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 WORK = HERE / "work"                      # 산출물·캐시 (깃허브 커밋 금지 — .gitignore 참조)
 WORK.mkdir(exist_ok=True)
 
@@ -45,12 +50,12 @@ STAMP = datetime.now().strftime("%Y%m%d")
 
 
 # ─────────────────────────────────────────────────────────────
-# .env / gcp-key.json  (reanalyze_ghosts.py 와 같은 규약)
+# local.env / gcp-key.json  (레포 루트 local_run/ — reanalyze_ghosts.py 와 같은 규약)
 # ─────────────────────────────────────────────────────────────
 def load_env() -> dict:
-    """폴더의 .env 를 읽어 os.environ 에 채운다(이미 있는 값은 덮지 않음). 반환: 읽은 키-값."""
+    """레포 루트 local_run/local.env 를 읽어 os.environ 에 채운다(이미 있는 값은 덮지 않음). 반환: 읽은 키-값."""
     env: dict = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -61,11 +66,9 @@ def load_env() -> dict:
     for k, v in env.items():
         if v and not os.environ.get(k):
             os.environ[k] = v
-    # 시트 키: QRADAR_SHEET(도구 규약) 또는 GOOGLE_SHEET_URL(파이프라인 규약) 둘 다 허용
-    if not os.environ.get("GOOGLE_SHEET_URL") and env.get("QRADAR_SHEET"):
-        os.environ["GOOGLE_SHEET_URL"] = env["QRADAR_SHEET"]
+    # 시트 키 이름 = GOOGLE_SHEET_URL (깃허브 시크릿과 동일 — 2026-10-13 명칭 일치. 옛 이름 QRADAR_SHEET 는 더 이상 읽지 않음)
     # 서비스 계정: gcp-key.json 파일 → GCP_SERVICE_ACCOUNT_JSON 문자열
-    key = HERE / "gcp-key.json"
+    key = KEY_FILE
     if key.exists() and not os.environ.get("GCP_SERVICE_ACCOUNT_JSON"):
         os.environ["GCP_SERVICE_ACCOUNT_JSON"] = key.read_text(encoding="utf-8")
     return env
