@@ -22,11 +22,11 @@
 | 파일 | 실행 위치 | 역할 |
 |---|---|---|
 | `run_export_github.py` | **깃허브 Actions 전용** (로컬 실행 시 가드가 중단) | Secrets 인증 → JSON 생성·검산 → dist/ 게시, keep-last-good, Job Summary 기록 |
-| `run_export_local.py` | **로컬 VSCode 전용** (Actions 실행 시 가드가 중단) | .env+gcp-key.json 인증 → JSON 미리보기 + 채널 A CSV 산출, 콘솔 리포트 |
+| `run_export_local.py` | **로컬 VSCode 전용** (Actions 실행 시 가드가 중단) | 레포 루트 local_run/local.env+gcp-key.json 인증 → JSON 미리보기 + 채널 A CSV 산출, 콘솔 리포트 |
 | `aggregate.py` `catmap.py` `codemap.py` `ledger_adapter.py` `json_writer.py` `csv_writer.py` `validate.py` `summary.py` | 공용 라이브러리 (양쪽에서 import) | 실행 진입점 아님 — 직접 돌리지 않음 |
 | `docs/qpage_export_workflow_snippet.yml` | 깃허브 | 기존 일 4회 재빌드 워크플로에 삽입할 스텝 |
 
-- 파일 전부 커밋해도 안전(자격정보 없음). 자격정보는 Secrets(깃허브) / .env·gcp-key.json(로컬)에만 존재.
+- 파일 전부 커밋해도 안전(자격정보 없음). 자격정보는 Secrets(깃허브) / 레포 루트 local_run/local.env·gcp-key.json(로컬)에만 존재.
 - `.gitignore`에 `local_out/`, `.env`, `gcp-key.json` 포함 확인.
 
 ## 실행법

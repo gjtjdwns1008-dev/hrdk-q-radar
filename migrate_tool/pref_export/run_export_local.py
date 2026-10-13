@@ -3,9 +3,9 @@
 ■ 실행: 이 파일을 그냥 실행하면 됩니다 (백필 도구와 같은 방식).
       VSCode ▶ 버튼, 또는:  python "run_export_local.py 파일의 전체 경로"
       (예전 방식인  python -m ...run_export_local  도 여전히 동작)
-■ 준비물(이 파일과 같은 폴더, 백필과 동일):
-      .env          — 시트 ID 등 (백필 .env 복사해오면 됨)
-      gcp-key.json  — 구글 서비스계정 키 (백필 것과 동일 파일)
+■ 준비물(레포 루트 local_run/ 한 곳 — 다른 도구와 같은 파일, 2026-10-13 열쇠 단일화):
+      local_run/local.env     — GOOGLE_SHEET_URL(깃허브 시크릿과 같은 이름)을 1순위로 사용
+      local_run/gcp-key.json  — 구글 서비스계정 키
 ■ 인증 방식: 백필 도구(run_local_backfill.py)와 동일 —
       .env를 직접 읽어 환경변수로 넣고, gcp-key.json을 통째로
       GCP_SERVICE_ACCOUNT_JSON 환경변수에 주입. (별도 라이브러리 불필요)
@@ -38,16 +38,21 @@ from pathlib import Path
 from . import aggregate, codemap, csv_writer, json_writer, sheets_client, source_adapter, summary, validate
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent.parent / "local_run"   # migrate_tool/<이 폴더> → 레포 루트
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 
 
 # ═════════ 준비물 로딩 — 백필 도구와 동일한 방식 ═════════
 
 def load_env() -> list[str]:
-    """이 파일 옆의 .env를 읽어 환경변수로 넣고, 넣은 이름 목록을 돌려준다."""
-    env_path = HERE / ".env"
+    """레포 루트 local_run/local.env 를 읽어 환경변수로 넣고, 넣은 이름 목록을 돌려준다."""
+    env_path = ENV_FILE
     if not env_path.exists():
-        print(f"❌ .env 파일이 없습니다: {env_path}")
-        print("   백필 도구(local_backfill)의 .env를 이 폴더로 복사하세요.")
+        print(f"❌ local.env 파일이 없습니다: {env_path}")
+        print("   레포 루트 local_run 폴더의 local.env 를 채우세요 (다른 도구와 같은 파일).")
         sys.exit(1)
     keys: list[str] = []
     for line in env_path.read_text(encoding="utf-8-sig").splitlines():
@@ -64,7 +69,7 @@ def load_env() -> list[str]:
 
 def load_gcp_key() -> None:
     """gcp-key.json을 통째로 읽어 GCP_SERVICE_ACCOUNT_JSON 환경변수에 넣는다."""
-    key_path = HERE / "gcp-key.json"
+    key_path = KEY_FILE
     if not key_path.exists():
         print(f"❌ gcp-key.json 파일이 없습니다: {key_path}")
         sys.exit(1)
@@ -80,6 +85,7 @@ def load_gcp_key() -> None:
 # ═════════ 구글시트 접속 — 읽기 전용, 이 파일에 자체 내장 ═════════
 
 _ID_CANDIDATE_KEYS = (
+    "GOOGLE_SHEET_URL",   # 깃허브 시크릿과 같은 이름 — 1순위 (2026-10-13 명칭 일치)
     "PREF_SHEET_ID", "SPREADSHEET_ID", "SHEET_ID", "GOOGLE_SHEET_ID",
     "GSHEET_ID", "RADAR_SPREADSHEET_ID", "SPREADSHEET_KEY", "SHEET_URL",
 )
