@@ -1,0 +1,22 @@
+[레포 정리 v1 — 적용 순서]  ※ 순서 중요: 업로드 먼저, 삭제는 나중에
+
+1️⃣ 업로드 (GitHub → Add file → Upload files → zip 내용물 폴더째 드래그)
+   README.md / pipeline/ (py 8개) / data/hrdk_law.db / docs/ (md 3개)
+   .github/workflows/ (daily.yml, run-manual.yml, run-briefing.yml)
+   → 커밋 1회
+
+2️⃣ 루트에서 구파일 삭제 (각 파일 열기 → 🗑)
+   main.py  brain.py  config.py  knowledge.py  report_maker.py
+   briefing_maker.py  briefing_pdf.py  briefing_prompts.py
+   hrdk_law.db
+   시스템_구조_설명서.md  변경리포트_20260705_새도우종료.md  변경리포트_20260706_직능연결별.md
+   → 커밋 (README·requirements.txt는 루트 유지!)
+
+3️⃣ 리허설(선택): Actions → run-manual → 실행 성공 확인
+   ※ 1️⃣과 2️⃣ 사이에 크론이 돌아도 안전 — 새 yml은 pipeline/main.py를 부르고
+     그 파일이 이미 있으므로 정상 작동, 구파일 잔존은 무해한 중복일 뿐
+
+[변경 원리]
+· 워크플로 실행 위치(레포 루트)는 그대로, 호출 경로만 pipeline/으로 추적
+· DB 경로는 __file__ 기준으로 개조 → 어느 CWD에서 실행해도 data/hrdk_law.db 발견
+· core·navigator·migrate_tool·build-navigator.yml은 무변경

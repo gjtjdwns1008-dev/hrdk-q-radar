@@ -1,0 +1,11 @@
+# HRDK Q-RADAR 의존성 (모노레포판 · 2026-07-05)
+# 공유 코어(hrdk_law_core)는 이 파일이 아니라 각 워크플로우의
+#   pip install ./core
+# 한 줄로, 같은 레포의 core/ 폴더에서 설치합니다. (외부 레포 의존 없음)
+
+requests>=2.31.0
+urllib3>=2.0.0
+google-genai
+openpyxl>=3.1.2
+gspread>=5.12.0,<7
+oauth2client>=4.1.3
