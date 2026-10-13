@@ -18,7 +18,7 @@ v2(2026-10-06)는 "별표 누락이 어디서 생길 수 있나"를 네 경로�
   python probe_annex.py "법령명" ["법령명2" ...]           ← 원하는 법령들
   python probe_annex.py --no-download "법령명"             ← 파일 다운로드(표본 대조) 생략, XML만
   python probe_annex.py --samples 5 "법령명"               ← 표본 대조 개수(기본 3)
-준비물: 이 폴더의 .env에 LAW_API_KEY (backfill 도구들과 동일). 레포 core/ 폴더를 설치본보다 먼저 쓴다.
+준비물: 레포 루트 local_run/local.env에 LAW_API_KEY (backfill 도구들과 동일). 레포 core/ 폴더를 설치본보다 먼저 쓴다.
 """
 import sys
 import re
@@ -326,7 +326,7 @@ try:
 except Exception:
     print("pdfminer: 🚨 미설치 (PDF 추출 불가)")
 if not KEY:
-    print("❌ LAW_API_KEY 없음 — .env 확인"); sys.exit(1)
+    print("❌ LAW_API_KEY 없음 — local_run/local.env 확인"); sys.exit(1)
 
 results = []
 for nm in NAMES:

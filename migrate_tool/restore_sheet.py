@@ -11,7 +11,7 @@ restore_sheet.py — 대장 전체 복원 (백업 xlsx → 구글시트 '국가�
 
 실행: python restore_sheet.py
       → 백업 xlsx 경로 입력 (예: C:\\...\\HRDK-Q-RADAR (1).xlsx)
-준비물: backfill_usage.py와 같은 폴더 (.env, gcp-key.json 재사용)
+준비물: 레포 루트 local_run/ 의 local.env·gcp-key.json (backfill_usage.py 와 같은 파일 재사용)
 """
 import sys
 import time

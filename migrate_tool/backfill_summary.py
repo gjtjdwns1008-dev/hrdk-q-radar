@@ -26,7 +26,7 @@ backfill_summary.py — 총괄현황표 이력 백필 (monitor → Q-RADAR)
   · 이미 있는 날짜(A열 표시값 기준)는 건너뜀 → 몇 번을 돌려도 안전(멱등)
 
 실행:  python backfill_summary.py  → 메뉴 (1 미리보기 / 2 반영 / 0 종료)
-준비물(.env): QRADAR_SHEET(새 시트) + MONITOR_SHEET(구 monitor 시트) + gcp-key.json
+준비물(레포 루트 local_run/local.env): GOOGLE_SHEET_URL(새 시트) + MONITOR_SHEET(구 monitor 시트) + local_run/gcp-key.json
 """
 import re
 import sys
@@ -35,6 +35,11 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent / "local_run"
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 TAB = "총괄현황표"
 PREVIEW_PATH = str(HERE / "총괄백필_미리보기.xlsx")
 STAMP = "🔵 이관"
@@ -43,7 +48,7 @@ LOG_MSG = "monitor 총괄 이력 이관(백필 도구)"
 
 def _load_env_file():
     env = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -76,12 +81,12 @@ def _retry(what, fn, tries=3, wait=4):
 
 def _preflight():
     ok = True
-    if not (HERE / "gcp-key.json").exists():
-        print("🔑 gcp-key.json이 이 폴더에 없습니다."); ok = False
-    for k, desc in (("QRADAR_SHEET", "새 Q-RADAR 시트 URL"),
+    if not KEY_FILE.exists():
+        print(f"🔑 gcp-key.json이 없습니다: {KEY_FILE}"); ok = False
+    for k, desc in (("GOOGLE_SHEET_URL", "새 Q-RADAR 시트 URL"),
                     ("MONITOR_SHEET", "구 law-monitor 시트 URL (이번에 한 줄 추가)")):
         if not _ENV.get(k):
-            print(f"⚠️ .env에 {k}({desc})가 없습니다."); ok = False
+            print(f"⚠️ local_run/local.env에 {k}({desc})가 없습니다."); ok = False
     if not ok:
         print("\n준비물을 채운 뒤 다시:  python backfill_summary.py")
     return ok
@@ -98,7 +103,7 @@ def _open_ss(url_key):
     if m:
         key = m.group(1)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads((HERE / "gcp-key.json").read_text(encoding="utf-8"), strict=False),
+        json.loads(KEY_FILE.read_text(encoding="utf-8"), strict=False),
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     return _retry(f"구글 시트 접속({url_key})",
                   lambda: gspread.authorize(creds).open_by_key(key))
@@ -175,7 +180,7 @@ def run(apply: bool):
         print("⛔ 형식이 다릅니다. 예: 202601"); return
 
     mss = _open_ss("MONITOR_SHEET")
-    qss = _open_ss("QRADAR_SHEET")
+    qss = _open_ss("GOOGLE_SHEET_URL")
     src_rows, skip = read_monitor_rows(mss.worksheet(TAB))
     if since:
         src_rows = [r for r in src_rows if r[1] >= since + "01"]

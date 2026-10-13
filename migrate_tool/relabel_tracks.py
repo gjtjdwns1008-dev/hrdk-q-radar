@@ -10,7 +10,7 @@ relabel_tracks.py — 통합 대장 Track 3칸에 한글 라벨 재부착 도구
   · Track1_취급유형 / Track1_위험도 / Track2_효용코드 세 컬럼의 해당 셀만 수정
 
 실행:  python relabel_tracks.py  → 메뉴 (1 미리보기 / 2 반영 / 0 종료)
-준비물: migrate_tool/.env(QRADAR_SHEET) + gcp-key.json + hrdk-law-core 설치
+준비물: 레포 루트 local_run/local.env(GOOGLE_SHEET_URL) + local_run/gcp-key.json + hrdk-law-core 설치
 """
 import re
 import sys
@@ -19,13 +19,18 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent / "local_run"
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 MAIN_TAB = "국가기술자격 관련법령"
 PREVIEW_PATH = str(HERE / "재라벨_미리보기.xlsx")
 
 
 def _load_env_file():
     env = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -40,10 +45,10 @@ _ENV = _load_env_file()
 
 def _preflight():
     ok = True
-    if not (HERE / "gcp-key.json").exists():
-        print("🔑 gcp-key.json이 이 폴더에 없습니다."); ok = False
-    if not _ENV.get("QRADAR_SHEET"):
-        print("⚠️ .env에 QRADAR_SHEET가 없습니다."); ok = False
+    if not KEY_FILE.exists():
+        print(f"🔑 gcp-key.json이 없습니다: {KEY_FILE}"); ok = False
+    if not _ENV.get("GOOGLE_SHEET_URL"):
+        print("⚠️ local_run/local.env에 GOOGLE_SHEET_URL이 없습니다."); ok = False
     try:
         from hrdk_law_core.certs import label_track1_type  # noqa
     except Exception:
@@ -58,12 +63,12 @@ def _preflight():
 def open_ws():
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
-    key = _ENV["QRADAR_SHEET"]
+    key = _ENV["GOOGLE_SHEET_URL"]
     m = re.search(r"/d/([A-Za-z0-9_-]+)", key)
     if m:
         key = m.group(1)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads((HERE / "gcp-key.json").read_text(encoding="utf-8"), strict=False),
+        json.loads(KEY_FILE.read_text(encoding="utf-8"), strict=False),
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds).open_by_key(key).worksheet(MAIN_TAB)
 

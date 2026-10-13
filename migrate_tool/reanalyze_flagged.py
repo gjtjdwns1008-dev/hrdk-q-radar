@@ -20,7 +20,7 @@ reanalyze_flagged.py — 검토필요 정리 도구 (모드C 재산정 + 모드B
         모드B 캐시 이어달리기(재과금 0) / C·B 모두 지정 칸만 기록.
 
 실행: python reanalyze_flagged.py   (backfill_usage.py와 같은 폴더·.env 재사용)
-준비물: .env(QRADAR_SHEET, GEMINI_API_KEY, LAW_API_KEY) + gcp-key.json
+준비물: 레포 루트 local_run/local.env(GOOGLE_SHEET_URL, GEMINI_API_KEY, LAW_API_KEY) + local_run/gcp-key.json
         + 로컬 core 최신 설치(재발방지판: pip install -e <repo>/core → pyhwp 포함)
 """
 import os

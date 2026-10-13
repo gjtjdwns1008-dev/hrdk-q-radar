@@ -14,8 +14,8 @@ reanalyze_ghosts.py — Q-RADAR '기준선 유령' 재분석 도구 (v3)
   · 직능연 2022 원본은 '우대사항_대장' 탭이 계속 보존 — 여긴 일일 대장의 현행화
 
 실행:  python reanalyze_ghosts.py   → 번호 메뉴 (1 미리보기 / 2 재분석 반영 / 0 종료)
-준비물(.env): QRADAR_SHEET, LAW_API_KEY, GEMINI_API_KEY (+선택 WORKNET_API_KEY)
-  + 폴더에 gcp-key.json, 로컬에 hrdk-law-core 설치(로컬 백필 때 그 환경 그대로)
+준비물(레포 루트 local_run/local.env): GOOGLE_SHEET_URL, LAW_API_KEY, GEMINI_API_KEY (+선택 WORKNET_API_KEY)
+  + local_run/gcp-key.json, 로컬에 hrdk-law-core 설치(로컬 백필 때 그 환경 그대로)
 """
 import os
 import re
@@ -27,13 +27,18 @@ import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = REPO / "local_run"
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 PREVIEW_PATH = str(HERE / "재분석_미리보기.xlsx")
 MAIN_TAB = "국가기술자격 관련법령"
 
 
 def _load_env_file():
     env = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -49,9 +54,8 @@ for _k in ("LAW_API_KEY", "GEMINI_API_KEY", "WORKNET_API_KEY",
            "GCP_SERVICE_ACCOUNT_JSON", "GOOGLE_SHEET_URL", "WEBHOOK_URL"):
     if _ENV.get(_k) and not os.environ.get(_k):
         os.environ[_k] = _ENV[_k]
-os.environ.setdefault("GOOGLE_SHEET_URL", _ENV.get("QRADAR_SHEET", ""))
 os.environ.setdefault("GCP_SERVICE_ACCOUNT_JSON",
-                      (HERE / "gcp-key.json").read_text(encoding="utf-8") if (HERE / "gcp-key.json").exists() else "")
+                      KEY_FILE.read_text(encoding="utf-8") if KEY_FILE.exists() else "")
 
 
 def norm_law(s):
@@ -203,12 +207,12 @@ def fetch_body(api_key, mst, max_chars=60000):
 def open_ws():
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
-    key = _ENV["QRADAR_SHEET"]
+    key = _ENV["GOOGLE_SHEET_URL"]
     m = re.search(r"/d/([A-Za-z0-9_-]+)", key)
     if m:
         key = m.group(1)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads((HERE / "gcp-key.json").read_text(encoding="utf-8"), strict=False),
+        json.loads(KEY_FILE.read_text(encoding="utf-8"), strict=False),
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds).open_by_key(key).worksheet(MAIN_TAB)
 
@@ -239,15 +243,15 @@ def scan(ws):
 
 def _preflight(need_llm):
     ok = True
-    for k, msg in (("QRADAR_SHEET", "새 Q-RADAR 시트 URL"), ("LAW_API_KEY", "법제처 API 키")):
+    for k, msg in (("GOOGLE_SHEET_URL", "새 Q-RADAR 시트 URL"), ("LAW_API_KEY", "법제처 API 키")):
         if not _ENV.get(k):
             print(f"⚠️ .env에 {k}({msg})가 없습니다."); ok = False
     if need_llm and not _ENV.get("GEMINI_API_KEY"):
         print("⚠️ .env에 GEMINI_API_KEY가 없습니다 (재분석=AI 호출에 필요).")
         print("   👉 로컬 백필 때 쓰던 그 키를 한 줄 추가:  GEMINI_API_KEY=...")
         ok = False
-    if not (HERE / "gcp-key.json").exists():
-        print("🔑 gcp-key.json이 이 폴더에 없습니다."); ok = False
+    if not KEY_FILE.exists():
+        print(f"🔑 gcp-key.json이 없습니다: {KEY_FILE}"); ok = False
     try:
         import hrdk_law_core  # noqa
         try:

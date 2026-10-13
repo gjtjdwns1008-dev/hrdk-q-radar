@@ -23,7 +23,7 @@ backfill_usage.py — 활용도_구분 공란 백필 도구 (모드1: 분류 전
   · 모든 네트워크 호출에 자동 재시도 3회(공단 PC 순간 컷 대비).
 
 실행:  python backfill_usage.py   → 번호 메뉴 (1 분석+미리보기 / 2 시트 반영 / 3 대상 스캔만 / 0 종료)
-준비물(.env): QRADAR_SHEET, GEMINI_API_KEY  + 폴더에 gcp-key.json
+준비물(레포 루트 local_run/local.env): GOOGLE_SHEET_URL, GEMINI_API_KEY  + local_run/gcp-key.json
   + 로컬에 hrdk-law-core 설치 (로컬 백필 때 그 환경 그대로)
 """
 import os
@@ -35,6 +35,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = REPO / "local_run"
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 PREVIEW_PATH = str(HERE / "활용도백필_미리보기.xlsx")
 CACHE_PATH = HERE / "usage_cache.json"
 MAIN_TAB = "국가기술자격 관련법령"
@@ -49,7 +54,7 @@ COL_JUYO = "주요 제·개정내용"
 # ── .env 로더 (reanalyze_ghosts 관례 계승) ─────────────────────────────
 def _load_env_file():
     env = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -88,13 +93,13 @@ def _retry(what, fn, tries=3, wait=4):
 def open_ws():
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
-    key_path = HERE / "gcp-key.json"
+    key_path = KEY_FILE
     if not key_path.exists():
-        print("❌ gcp-key.json이 이 폴더에 없습니다. (다른 migrate 도구와 같은 키 재사용)")
+        print(f"❌ gcp-key.json이 없습니다: {KEY_FILE}  (레포 루트 local_run 폴더 한 곳에만 둡니다)")
         sys.exit(1)
-    sheet_ref = _ENV.get("QRADAR_SHEET", "").strip()
+    sheet_ref = _ENV.get("GOOGLE_SHEET_URL", "").strip()
     if not sheet_ref:
-        print("❌ .env에 QRADAR_SHEET가 없습니다.")
+        print("❌ local_run/local.env에 GOOGLE_SHEET_URL이 없습니다.")
         sys.exit(1)
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
@@ -309,7 +314,7 @@ PREVIEW2_PATH = str(HERE / "활용도백필_모드2_미리보기.xlsx")
 def _law_api_key():
     k = _ENV.get("LAW_API_KEY", "") or os.environ.get("LAW_API_KEY", "")
     if not k:
-        print("❌ .env에 LAW_API_KEY가 없습니다 (모드2는 법제처 재수집이 필요)")
+        print("❌ local_run/local.env에 LAW_API_KEY가 없습니다 (모드2는 법제처 재수집이 필요)")
         sys.exit(1)
     return k
 

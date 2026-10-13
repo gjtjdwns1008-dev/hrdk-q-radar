@@ -30,11 +30,16 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent / "local_run"
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 
 def _load_env_file():
-    """migrate_tool/.env 를 읽어 dict로 (없으면 빈 dict) — Windows에서도 동작"""
+    """레포 루트 local_run/local.env 를 읽어 dict로 (없으면 빈 dict) — Windows에서도 동작"""
     env = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -52,7 +57,7 @@ MONITOR_XLSX = os.environ.get("MONITOR_XLSX", _ENV.get("MONITOR_XLSX",
 RADAR_XLSX   = os.environ.get("RADAR_XLSX", _ENV.get("RADAR_XLSX",
                "/mnt/user-data/uploads/HRDK_LAW-RADAR.xlsx"))
 
-# [라이브용] 이 폴더에 gcp-key.json 과 .env(RADAR_SHEET / MONITOR_SHEET / QRADAR_SHEET) 를 두세요
+# [라이브용] 레포 루트 local_run/ 에 gcp-key.json 과 local.env(RADAR_SHEET / MONITOR_SHEET / GOOGLE_SHEET_URL) 를 두세요
 SOURCE = os.environ.get("SOURCE", "local").lower()      # local | live
 APPLY  = os.environ.get("APPLY", "").strip() == "1"      # 1 이어야만 실제 반영
 
@@ -138,21 +143,21 @@ def read_tab_local(xlsx, tab):
 def read_tab_live(sheet_env, tab):
     import json, gspread
     from oauth2client.service_account import ServiceAccountCredentials
-    if not (HERE / "gcp-key.json").exists():
-        print("⛔ migrate_tool 폴더에 gcp-key.json(서비스계정 키)이 없습니다.")
-        print("   RADAR에서 쓰던 키 파일을 복사해 오고, 새 Q-RADAR 시트에도 그 서비스계정")
+    if not KEY_FILE.exists():
+        print(f"⛔ gcp-key.json(서비스계정 키)이 없습니다: {KEY_FILE}")
+        print("   서비스계정 키 파일을 레포 루트 local_run 폴더에 두고, 새 Q-RADAR 시트에도 그 서비스계정")
         print("   이메일을 편집자로 공유했는지 확인하세요.")
         sys.exit(1)
     key = _ENV.get(sheet_env, "")
     if not key:
-        print(f"⛔ .env에 {sheet_env} 값이 없습니다.")
-        print("   env.example을 복사해 .env를 만들고 세 시트 URL을 채워주세요.")
+        print(f"⛔ local_run/local.env에 {sheet_env} 값이 없습니다.")
+        print("   레포 루트 local_run/local.env 에 세 시트 URL(RADAR_SHEET / MONITOR_SHEET / GOOGLE_SHEET_URL)을 채워주세요.")
         sys.exit(1)
     m = re.search(r"/d/([A-Za-z0-9_-]+)", key)
     if m:
         key = m.group(1)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads((HERE / "gcp-key.json").read_text(encoding="utf-8"), strict=False),
+        json.loads(KEY_FILE.read_text(encoding="utf-8"), strict=False),
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     ss = gspread.authorize(creds).open_by_key(key)
     try:
@@ -208,25 +213,25 @@ def decide_preferred(row):
 def _preflight():
     """실행 전 준비물 점검 — 부족하면 뭘 해야 하는지 한국어로 안내"""
     ok = True
-    if not (HERE / ".env").exists():
+    if not ENV_FILE.exists():
         if (HERE / "env.example").exists():
-            (HERE / ".env").write_text((HERE / "env.example").read_text(encoding="utf-8"), encoding="utf-8")
-            print("📄 .env 파일이 없어서 방금 만들어 뒀습니다 (env.example 복사본).")
+            ENV_FILE.write_text((HERE / "env.example").read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"📄 local.env 파일이 없어서 방금 만들어 뒀습니다 (env.example 복사본): {ENV_FILE}")
         else:
-            print("📄 .env 파일이 없습니다.")
-        print("   👉 메모장으로  migrate_tool 폴더의 .env  를 열어 세 시트 URL을 붙여넣어 주세요.")
+            print(f"📄 local.env 파일이 없습니다: {ENV_FILE}")
+        print("   👉 메모장으로  레포 루트 local_run 폴더의 local.env  를 열어 세 시트 URL을 붙여넣어 주세요.")
         print("      (구글시트를 브라우저로 열고 주소창의 URL 전체를 복사하면 됩니다)")
         ok = False
     else:
         env = _load_env_file()
-        for k in ("RADAR_SHEET", "MONITOR_SHEET", "QRADAR_SHEET"):
+        for k in ("RADAR_SHEET", "MONITOR_SHEET", "GOOGLE_SHEET_URL"):
             v = env.get(k, "")
             if not v or "여기에" in v:
-                print(f"   ⚠️ .env의 {k} 칸이 아직 비어있어요 → 메모장으로 열어 해당 시트 URL을 붙여넣어 주세요.")
+                print(f"   ⚠️ local.env의 {k} 칸이 아직 비어있어요 → 메모장으로 열어 해당 시트 URL을 붙여넣어 주세요.")
                 ok = False
-    if not (HERE / "gcp-key.json").exists():
-        print("🔑 gcp-key.json(서비스계정 열쇠)이 이 폴더에 없습니다.")
-        print("   👉 HRDK-LAW-RADAR의 local_backfill 폴더에서 쓰던 gcp-key.json을 이 폴더로 복사하세요.")
+    if not KEY_FILE.exists():
+        print(f"🔑 gcp-key.json(서비스계정 열쇠)이 없습니다: {KEY_FILE}")
+        print("   👉 서비스계정 키 파일을 레포 루트 local_run 폴더에 gcp-key.json 이름으로 두세요 (다른 도구와 같은 파일).")
         print("   👉 그리고 새 Q-RADAR 시트의 [공유]에 그 서비스계정 이메일이 '편집자'로 있는지 확인!")
         ok = False
     if not ok:
@@ -415,15 +420,15 @@ def main():
 
     import json, gspread
     from oauth2client.service_account import ServiceAccountCredentials
-    qkey = _ENV.get("QRADAR_SHEET", "")
+    qkey = _ENV.get("GOOGLE_SHEET_URL", "")
     if not qkey:
-        print("⛔ .env에 QRADAR_SHEET(새 시트 URL)가 없습니다 — 반영 중단.")
+        print("⛔ local_run/local.env에 GOOGLE_SHEET_URL(새 시트 URL)가 없습니다 — 반영 중단.")
         sys.exit(1)
     m = re.search(r"/d/([A-Za-z0-9_-]+)", qkey)
     if m:
         qkey = m.group(1)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads((HERE / "gcp-key.json").read_text(encoding="utf-8"), strict=False),
+        json.loads(KEY_FILE.read_text(encoding="utf-8"), strict=False),
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     gc = gspread.authorize(creds)
     q = gc.open_by_key(qkey)

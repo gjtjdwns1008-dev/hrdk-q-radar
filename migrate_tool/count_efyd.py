@@ -10,7 +10,7 @@ count_efyd.py — 특정 시행일의 법제처 시행 법령 총수·목록 확
   python migrate_tool/count_efyd.py 20261002
   python migrate_tool/count_efyd.py 20261002 "아동학대범죄의 처벌 등에 관한 특례법 시행령"
                                                            ← 기준 법령명 '뒤'(가나다순)에 오는 법령 = 누락 추정분을 따로 보여줌
-준비물: 이 폴더의 .env에 LAW_API_KEY (backfill 도구들과 동일)
+준비물: 레포 루트 local_run/local.env에 LAW_API_KEY (backfill 도구들과 동일)
 """
 import sys
 from pathlib import Path
@@ -28,7 +28,7 @@ import backfill_usage as bu  # .env 로딩 재사용
 
 KEY = bu._ENV.get("LAW_API_KEY", "")
 if not KEY:
-    print("❌ LAW_API_KEY 없음 — .env 확인"); sys.exit(1)
+    print("❌ LAW_API_KEY 없음 — local_run/local.env 확인"); sys.exit(1)
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
 DATE = args[0] if args else "20261002"

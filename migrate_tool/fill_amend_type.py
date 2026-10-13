@@ -13,8 +13,8 @@ fill_amend_type.py — Q-RADAR 대장 정비 도구 (개정유형 백필 + 시�
 나머지 모든 셀·탭은 절대 불변.
 
 실행: 그냥  python fill_amend_type.py  → 번호 메뉴 (1 미리보기 / 2 반영 / 0 종료)
-준비물: migrate_tool/.env 에 QRADAR_SHEET + LAW_API_KEY, 폴더에 gcp-key.json
-  ※ LAW_API_KEY가 .env에 없으면 메모장으로 한 줄 추가:  LAW_API_KEY=발급받은키
+준비물: 레포 루트 local_run/local.env 에 GOOGLE_SHEET_URL + LAW_API_KEY, local_run/gcp-key.json
+  ※ LAW_API_KEY가 local.env에 없으면 메모장으로 한 줄 추가:  LAW_API_KEY=발급받은키
     (GitHub Secrets에 넣은 그 값과 동일)
 """
 import os
@@ -26,13 +26,18 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
+# ★2026-10-13 열쇠 단일화: .env·gcp-key.json 은 레포 루트 local_run/ 한 곳만 읽는다
+#   (migrate_tool/.env, migrate_tool/gcp-key.json 은 더 이상 보지 않음 — 복사본을 두지 말 것)
+LOCAL_RUN = HERE.parent / "local_run"
+ENV_FILE = LOCAL_RUN / "local.env"
+KEY_FILE = LOCAL_RUN / "gcp-key.json"
 PREVIEW_PATH = str(HERE / "대장정비_미리보기.xlsx")
 MAIN_TAB = "국가기술자격 관련법령"
 
 
 def _load_env_file():
     env = {}
-    p = HERE / ".env"
+    p = ENV_FILE
     if p.exists():
         for line in p.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -56,15 +61,15 @@ def norm_date(v):
 
 def _preflight():
     ok = True
-    if not (HERE / "gcp-key.json").exists():
-        print("🔑 gcp-key.json이 이 폴더에 없습니다 (이관 때 쓰던 그 파일).")
+    if not KEY_FILE.exists():
+        print(f"🔑 gcp-key.json이 없습니다: {KEY_FILE} (이관 때 쓰던 그 파일을 local_run 폴더에).")
         ok = False
-    if not _ENV.get("QRADAR_SHEET"):
-        print("⚠️ .env에 QRADAR_SHEET가 없습니다 (이관 때 채운 .env 그대로면 있음).")
+    if not _ENV.get("GOOGLE_SHEET_URL"):
+        print("⚠️ local_run/local.env에 GOOGLE_SHEET_URL이 없습니다.")
         ok = False
     if not _ENV.get("LAW_API_KEY"):
-        print("⚠️ .env에 LAW_API_KEY가 없습니다.")
-        print("   👉 메모장으로 .env를 열어 아래 한 줄을 추가하세요 (Secrets에 넣은 그 값):")
+        print("⚠️ local_run/local.env에 LAW_API_KEY가 없습니다.")
+        print("   👉 메모장으로 local_run/local.env를 열어 아래 한 줄을 추가하세요 (Secrets에 넣은 그 값):")
         print("      LAW_API_KEY=발급받은키")
         ok = False
     if not ok:
@@ -75,12 +80,12 @@ def _preflight():
 def open_ws():
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
-    key = _ENV["QRADAR_SHEET"]
+    key = _ENV["GOOGLE_SHEET_URL"]
     m = re.search(r"/d/([A-Za-z0-9_-]+)", key)
     if m:
         key = m.group(1)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        json.loads((HERE / "gcp-key.json").read_text(encoding="utf-8"), strict=False),
+        json.loads(KEY_FILE.read_text(encoding="utf-8"), strict=False),
         ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"])
     ss = gspread.authorize(creds).open_by_key(key)
     return ss.worksheet(MAIN_TAB)
