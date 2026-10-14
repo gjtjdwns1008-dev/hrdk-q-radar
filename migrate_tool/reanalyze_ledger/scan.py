@@ -7,6 +7,7 @@
   --ids 파일.txt        또는 MST_ID 를 줄마다 적은 텍스트
   --all                 또는 대장 전체 (후속 전수 회귀검증용)
   --local 대장.xlsx      구글 시트 대신 로컬 xlsx 의 대장 탭을 읽음 (= LOCAL_XLSX)
+  (인자 없이 실행 = ▶ 버튼 / start.py [1]) → 화면에서 [1] 대장 전체 / [2] 이상건 목록 xlsx / [3] MST_ID txt 를 고른다  ★2026-10-13
 
 출력  work/대상목록_YYYYMMDD.xlsx
   · 대상목록 : 순번·MST_ID·시행일자·법령명·소관부처·현재 판정(연관도·우대여부·우대분류·검토필요)·점검유형·재분석대상(Y/N)·비고
@@ -58,13 +59,36 @@ def kind_letters(kinds_text: str) -> set[str]:
 
 def main():
     ap = argparse.ArgumentParser(description="재분석 대상 선정 (읽기 전용)")
-    g = ap.add_mutually_exclusive_group(required=True)
+    g = ap.add_mutually_exclusive_group()   # ★2026-10-13 required 해제: 인자 없이(▶ 버튼) 켜면 아래서 화면으로 묻는다
     g.add_argument("--targets", help="이상건 목록 xlsx")
     g.add_argument("--ids", help="MST_ID 텍스트 파일")
     g.add_argument("--all", action="store_true", help="대장 전체")
     ap.add_argument("--sheet", default="이상건_목록", help="--targets 의 시트명")
     ap.add_argument("--local", help="구글 시트 대신 읽을 로컬 대장 xlsx")
     args = ap.parse_args()
+    if len(sys.argv) == 1:                                   # ▶ 버튼(인자 없음): 화면에서 묻기 (run.py 와 같은 방식) ★2026-10-13
+        print("── 재분석 대상 선정 (시트 읽기만) ──")
+        print("  [1] 대장 전체            (전수 회귀검증·전수 재분석용)")
+        print("  [2] 이상건 목록 xlsx     (QRADAR_이상건_목록.xlsx 등, MST_ID·점검유형 열)")
+        print("  [3] MST_ID 목록 txt      (줄마다 MST_ID 하나)")
+        ch = input("번호 선택 (엔터 = 1): ").strip() or "1"
+        if ch == "1":
+            args.all = True
+        elif ch in ("2", "3"):
+            p = input("파일 경로 (탐색기에서 복사해 붙여넣기, 따옴표 있어도 됨): ").strip().strip('"').strip("'")
+            if not os.path.exists(p):
+                print(f"⚠️ 파일이 없습니다: {p}"); sys.exit(1)
+            if ch == "2":
+                args.targets = p
+                s = input(f"시트명 (엔터 = {args.sheet}): ").strip()
+                if s:
+                    args.sheet = s
+            else:
+                args.ids = p
+        else:
+            print("1~3 중에서 고르세요."); sys.exit(1)
+    if not (args.all or args.targets or args.ids):          # 명령줄로 쓸 때는 예전처럼 셋 중 하나가 필수
+        ap.error("--targets / --ids / --all 중 하나가 필요합니다.")
 
     C.load_env()
     if args.local:

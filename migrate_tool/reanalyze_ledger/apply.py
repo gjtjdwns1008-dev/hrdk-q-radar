@@ -17,6 +17,7 @@
   python apply.py --file work/재분석_대조_20260916.xlsx             # 미리보기(기본)
   python apply.py --file work/재분석_대조_20260916.xlsx --commit    # 실제 반영
   python apply.py --file ... --local 대장.xlsx                       # 로컬 xlsx 로 미리보기만(쓰기 불가)
+  (인자 없이 실행 = ▶ 버튼 / start.py [3]) → work/ 최신 대조 xlsx 로 미리보기 → '반영' 이라고 입력한 때만 기록  ★2026-10-13
 """
 from __future__ import annotations
 
@@ -171,8 +172,18 @@ def main():
     for p in plans[:5]:
         print(f"   {p['MST_ID']} {p['법령명'][:24]} (행 {p['_row']}): " + ", ".join(f"{c} {o[:10]!r}→{n[:10]!r}" for c, o, n in p["cells"][:3]) + (" …" if len(p["cells"]) > 3 else ""))
 
+    if not args.commit and len(sys.argv) == 1 and plans and not os.environ.get("LOCAL_XLSX"):
+        # ★2026-10-13 ▶ 버튼(인자 없음)은 --commit 을 붙일 수 없으므로 미리보기를 보여준 뒤 화면에서 확인한다.
+        #   '반영' 이라고 정확히 입력한 때만 기록(백업 탭 자동 생성). 그 외 입력·엔터 = 미리보기로 끝.
+        #   로컬 xlsx(LOCAL_XLSX) 를 읽은 미리보기에서는 묻지 않는다(시트와 다른 파일을 보고 쓰면 안 되므로).
+        try:
+            ans = input("\n시트에 실제로 반영할까요? 반영하려면 '반영' 이라고 입력 (그 외·엔터 = 미리보기만): ").strip()
+        except EOFError:                     # 입력창이 없는 환경(자동 실행 등)이면 묻지 못한 것 = 미리보기만
+            ans = ""
+        if ans == "반영":
+            args.commit = True
     if not args.commit:
-        print("\n※ 미리보기만 했습니다. 실제 반영은 같은 명령에 --commit 을 붙여 실행하세요.")
+        print("\n※ 미리보기만 했습니다. 실제 반영은 같은 명령에 --commit 을 붙여 실행하거나, ▶ 실행이면 '반영' 을 입력하세요.")
         return
     if not plans:
         print("반영할 것이 없습니다."); return
