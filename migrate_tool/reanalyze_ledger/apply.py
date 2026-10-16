@@ -73,12 +73,12 @@ def plan_changes(approved: list[dict], header: list[str], rows: list[dict], forc
             skipped.append((mid, a["법령명"], f"대장에 MST_ID 중복 {len(hits)}행 — 정리 후 재시도")); continue
         cur = hits[0]
         # run 이후 시트가 바뀌었는지: 대장 현재값 vs 대조 엑셀의 구_ 값
-        drift = [c for c in C.ANALYSIS_COLS if not C.same_value(cur.get(c, ""), a.get(f"구_{c}", ""))]
+        drift = [c for c in C.ANALYSIS_COLS if not C.same_value_col(c, cur.get(c, ""), a.get(f"구_{c}", ""))]   # ★2026-10-14 순서 무시
         if drift and not force:
             skipped.append((mid, a["법령명"], f"대조 시점 이후 시트 값 변경 감지({', '.join(drift[:3])}{'…' if len(drift) > 3 else ''}) — 재확인 후 --force"))
             continue
         cells = [(c, str(cur.get(c, "")), str(a.get(f"신_{c}", ""))) for c in C.ANALYSIS_COLS
-                 if not C.same_value(cur.get(c, ""), a.get(f"신_{c}", ""))]
+                 if not C.same_value_col(c, cur.get(c, ""), a.get(f"신_{c}", ""))]   # ★2026-10-14 순서만 바뀐 칸은 쓰지 않음(옛 순서 유지)
         if not cells:
             skipped.append((mid, a["법령명"], "바뀌는 칸 없음(이미 동일)")); continue
         plans.append({"MST_ID": mid, "법령명": a["법령명"], "_row": cur["_row"], "cells": cells})

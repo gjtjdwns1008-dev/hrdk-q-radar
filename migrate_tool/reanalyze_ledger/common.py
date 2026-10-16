@@ -157,3 +157,20 @@ def same_value(a, b) -> bool:
     """대조·변경 감지용 비교. 앞뒤 공백과 쉼표 주변 공백만 무시한다(그 외는 글자 하나라도 다르면 '다름')."""
     n = lambda v: re.sub(r"\s*,\s*", ",", str(v or "").strip())
     return n(a) == n(b)
+
+
+# ★2026-10-14 순서 무시 비교 — 쉼표로 나열하는 목록형 칸은 '같은 항목 집합'이면 같은 값으로 본다
+#   (20건 시범에서 종목 순서만 바뀐 행이 '변경'으로 잡힘). 그 밖의 칸은 same_value 와 동일.
+LIST_COLS = {"관련 종목", "근거조문"}
+
+
+def split_items(v) -> set[str]:
+    """'A, B ,C' → {'A','B','C'} (빈 항목 제거)."""
+    return {x.strip() for x in str(v or "").split(",") if x.strip()}
+
+
+def same_value_col(col: str, a, b) -> bool:
+    """칸 이름을 아는 비교: 목록형 칸(LIST_COLS)은 순서를 무시하고, 나머지는 same_value."""
+    if col in LIST_COLS:
+        return split_items(a) == split_items(b)
+    return same_value(a, b)
