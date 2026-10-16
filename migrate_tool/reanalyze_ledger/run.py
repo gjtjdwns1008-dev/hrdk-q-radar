@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 import argparse
-import json, traceback
+import json, re, traceback
 import os
 import sys
 import time
@@ -121,6 +121,23 @@ def fetch_laws_for_date(date: str, names: set[str], mock: bool) -> list[dict] | 
 ERROR_LOG = C.WORK / f"오류로그_{C.STAMP}.txt"
 
 
+_GRADE_PHRASE_RE = re.compile(r"(?<![가-힣])(기술사|기능장|산업기사|기사|기능사)(?:의)?\s*(?:자격|이상)")
+
+
+def deletion_evidence(old: dict, new: dict, law_text: str) -> dict:
+    """★2026-10-16 추천 완화 (b) 재료 — 구 종목 중 신에서 사라진 것이
+       · 원문에 글자 그대로(띄어쓰기 무시) 있는가 → _삭제종목_원문출현
+       · 원문에 '기사 이상'류 등급 통칭 문구가 있는가(분야 확장분일 수 있음) → _원문_등급문구
+    둘 다 아니면 그 삭제는 과잉추론 정리로 본다."""
+    lost = C.split_items(old.get("관련 종목", "")) - C.split_items(new.get("관련 종목", ""))
+    if not lost or not law_text:
+        return {"_삭제종목_원문출현": "", "_원문_등급문구": ""}
+    body = re.sub(r"[ \t]+", "", law_text)
+    present = sorted(c for c in lost if re.sub(r"\(.*?\)$", "", c).replace(" ", "") in body)
+    return {"_삭제종목_원문출현": ", ".join(present),
+            "_원문_등급문구": "Y" if _GRADE_PHRASE_RE.search(law_text) else ""}
+
+
 def prompt_version() -> str:
     """★2026-10-14 brain.PROMPT_VERSION — 없는 구판 brain 이면 '(미표시)'."""
     try:
@@ -206,7 +223,9 @@ def analyze_one(law: dict, mock_old: dict | None) -> tuple[bool, dict, str]:
         info["_사전밖_제외"] = ", ".join(dropped)          # 대조표 참고용(시트에 쓰지 않음)
     info["워크넷 실시간 구인건수"] = get_worknet_job_count(std, api_key=os.environ.get("WORKNET_API_KEY", "")) \
         if info.get("우대여부") == "O" else "-"
-    return True, {c: str(info.get(c, "")) for c in C.ANALYSIS_COLS} | {"_사전밖_제외": info.get("_사전밖_제외", "")}, ""
+    return True, {c: str(info.get(c, "")) for c in C.ANALYSIS_COLS} | {"_사전밖_제외": info.get("_사전밖_제외", ""),
+                                                                       "_자동보강": str(info.get("_자동보강", "")),
+                                                                       "_원문미출현": str(info.get("_원문미출현", ""))}, ""   # ★2026-10-15 R6·R7 보강안·R8 정보(대조 엑셀 전용)
 
 
 def _install_mock_llm(old: dict):
@@ -329,6 +348,7 @@ def main():
                 new["_원문글자수"] = len(str(law.get("원본", "")))
                 new["_판본출처"] = law.get("판본출처", "")    # 빈칸 = 그날 현행 목록, 값 있음 = 연혁 판본
                 new["_프롬프트버전"] = pver                   # ★2026-10-14 캐시 신선도 판정용
+                new.update(deletion_evidence(old_by_id.get(mid) or {}, new, str(law.get("원본", ""))))   # ★2026-10-16 (b) 재료
                 (CACHE / f"result_{mid}.json").write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
             except Exception as e:
                 failures.append((mid, name, date, "분석", log_exception(mid, name, date, "분석", law, e)))
@@ -356,14 +376,24 @@ def recommend(old: dict, new: dict, changed: list) -> tuple[str, str]:
       ② 우대여부 O→빈칸, 연관도 하향, 신 검토필요 O, 연관높음인데 상세 분석 빈칸 → 사람 판단
       ③ 핵심 판정 열·근거조문이 전부 같으면(해설만 다름) → 미반영
       ④ 핵심 판정이 바뀌었으면(승격·분류·Track 변경) → O 추천 — 근거조문이 비었으면 사람 판단
-      ⑤ 그 외(종목 추가·근거조문 변경뿐) → O 추천(소폭)"""
-    reasons = []
+      ⑤ 그 외(종목 추가·근거조문 변경뿐) → O 추천(소폭)
+    ★2026-10-16 완화(R3 98건 판독 — 사람 판단 74%의 대부분이 과잉추론 정리였음):
+      (a) 구 검토필요 O였던 행이 신 X·근거 있음·R7 미발동이면 → 'O 추천(정리)' (우대 O→빈칸은 제외)
+      (b) 삭제된 종목이 원문에 글자로 없고 원문에 등급 통칭 문구도 없으면 → 삭제를 막는 사유로 보지 않음
+      (c) 우대 빈칸 행의 우대분류 빈칸↔기타는 표기 차이"""
+    reasons, notes = [], []
     old_items, new_items = C.split_items(old.get("관련 종목", "")), C.split_items(new.get("관련 종목", ""))
     lost = sorted(old_items - new_items)
+    old_flag = str(old.get("검토필요", "")).strip() == "O"
     if lost and "[전종목]" not in new_items:
         n_add = len(new_items - old_items)
-        reasons.append(f"구 종목 {len(lost)}개가 신에서 사라짐(+{n_add}개 추가): {', '.join(lost)[:120]}"
-                       + (" — 구 분석은 검토필요 O(불확실 표시)였음" if str(old.get("검토필요", "")).strip() == "O" else ""))
+        literal = C.split_items(new.get("_삭제종목_원문출현", ""))
+        if literal:                                   # ★2026-10-16 (b) 삭제 종목이 원문에 글자로 있음 → 진짜 손실 의심
+            reasons.append(f"구 종목 {len(lost)}개가 신에서 사라졌고 그중 원문에 글자로 있는 것 {len(literal)}종: {', '.join(sorted(literal))[:100]}")
+        elif new.get("_원문_등급문구") == "Y":          # (b) 글자는 없지만 '기사 이상'류 문구가 있어 분야 확장분일 수 있음
+            reasons.append(f"구 종목 {len(lost)}개가 신에서 사라짐(+{n_add}개 추가, 글자로는 없음) — 원문에 등급 통칭 문구가 있어 분야 확장분일 수 있음: {', '.join(lost)[:80]}")
+        else:                                         # (b) 글자도 없고 등급 문구도 없음 → 과잉추론 정리로 봄(막지 않음)
+            notes.append(f"삭제 {len(lost)}종(+{n_add}종 추가) 모두 원문에 글자 없음·등급 문구 없음 → 과잉추론 정리로 봄")
     if str(old.get("우대여부", "")).strip() == "O" and str(new.get("우대여부", "")).strip() != "O":
         reasons.append("우대 O→빈칸")
     if REL_RANK.get(str(new.get("연관도", "")).strip(), 1) < REL_RANK.get(str(old.get("연관도", "")).strip(), 1):
@@ -372,9 +402,21 @@ def recommend(old: dict, new: dict, changed: list) -> tuple[str, str]:
         reasons.append("신 분석이 검토필요 O")
     if str(new.get("연관도", "")).strip() == "연관높음" and not str(new.get("상세 분석 결과", "")).strip():
         reasons.append("연관높음인데 상세 분석 빈칸")
+    if reasons and old_flag and str(new.get("검토필요", "")).strip() != "O" and str(new.get("근거조문", "")).strip() \
+            and not any(("우대 O→빈칸" in r) for r in reasons):
+        # ★2026-10-16 (a) 구 분석이 스스로 검토필요 O라 신고했던 행이 깨끗해짐(R7 미발동) → 정리로 추천.
+        #   단 우대 O→빈칸은 (a)로 풀지 않는다(우대가 사라지는 건 사람이 본다).
+        notes.append("구 검토필요 O → 신 X(근거 있음): " + " / ".join(reasons))
+        reasons = []
     if reasons:
-        return "사람 판단", " / ".join(reasons)
+        return "사람 판단", " / ".join(reasons + notes)
     core_changed = [c for c in C.CORE_COLS if c in changed]
+    # ★2026-10-16 (c) 우대 빈칸 행에서 우대분류 빈칸↔'기타'는 표기 차이 → 핵심 변경으로 세지 않음
+    if "우대분류" in core_changed and str(new.get("우대여부", "")).strip() != "O" \
+            and {str(old.get("우대분류", "")).strip(), str(new.get("우대분류", "")).strip()} <= {"", "기타"}:
+        core_changed.remove("우대분류")
+    if notes and (not core_changed and "근거조문" not in changed):
+        return "O 추천(정리)", " / ".join(notes)
     if not core_changed and "근거조문" not in changed:
         return "미반영", "핵심 판정·종목·근거조문 동일(해설만 다름)"
     if core_changed:
@@ -384,14 +426,15 @@ def recommend(old: dict, new: dict, changed: list) -> tuple[str, str]:
         added = sorted(new_items - old_items)
         if added:
             desc += f" / 종목 {len(added)}개 추가" if desc else f"종목 {len(added)}개 추가"
-        return "O 추천", (desc + f" / 신뢰도 {new.get('AI신뢰도', '')}").strip(" /")
+        label = "O 추천(정리)" if notes else "O 추천"
+        return label, " / ".join(notes + [(desc + f" / 신뢰도 {new.get('AI신뢰도', '')}").strip(" /")])
     added = sorted(new_items - old_items)
     bits = []
     if added:
         bits.append(f"종목 {len(added)}개 추가: {', '.join(added)[:100]}")
     if "근거조문" in changed:
         bits.append("근거조문 변경")
-    return "O 추천(소폭)", " / ".join(bits) or "경미한 변경"
+    return ("O 추천(정리)" if notes else "O 추천(소폭)"), " / ".join(notes + bits) or "경미한 변경"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -411,7 +454,7 @@ def build_compare_xlsx(tg, old_by_id, failures, mock, model, lvl) -> Path:
         cp = CACHE / f"result_{mid}.json"
         rec = {"순번": i, "MST_ID": mid, "시행일자": C.norm_date(t["시행일자"]), "법령명": t["법령명"], "점검유형": t.get("점검유형", "")}
         if not cp.exists():
-            rec.update({"상태": "실패" if mid in fail_ids else "미실행", "변경필드수": "", "핵심변경": "", "승인": "", "추천": "", "추천사유": "", "검토메모": ""})
+            rec.update({"상태": "실패" if mid in fail_ids else "미실행", "변경필드수": "", "핵심변경": "", "승인": "", "추천": "", "추천사유": "", "자동보강(R6·R7)": "", "원문미출현_종목": "", "검토메모": ""})
             for c in C.ANALYSIS_COLS:
                 rec[f"구_{c}"] = old.get(c, ""); rec[f"신_{c}"] = ""
             recs.append(rec); continue
@@ -421,7 +464,7 @@ def build_compare_xlsx(tg, old_by_id, failures, mock, model, lvl) -> Path:
         rcm, why = recommend(old, new, changed)                       # ★2026-10-14 승인 추천
         rec.update({"상태": "성공", "변경필드수": len(changed),
                     "핵심변경": ", ".join(f"{c}: {old.get(c,'')[:12]}→{new.get(c,'')[:12]}" for c in core_changed),
-                    "승인": "", "추천": rcm, "추천사유": why, "검토메모": "", "사전밖_제외": new.get("_사전밖_제외", ""),
+                    "승인": "", "추천": rcm, "추천사유": why, "자동보강(R6·R7)": new.get("_자동보강", ""), "원문미출현_종목": new.get("_원문미출현", ""), "검토메모": "", "사전밖_제외": new.get("_사전밖_제외", ""),
                     "소요초": new.get("_소요초", ""), "원문글자수": new.get("_원문글자수", ""), "판본출처": new.get("_판본출처", "")})
         for c in C.ANALYSIS_COLS:
             rec[f"구_{c}"] = old.get(c, ""); rec[f"신_{c}"] = new.get(c, "")
@@ -430,7 +473,7 @@ def build_compare_xlsx(tg, old_by_id, failures, mock, model, lvl) -> Path:
         recs.append(rec)
 
     # 열 순서: 키·상태·승인 → 핵심 열 구/신 쌍 → 나머지 구/신 쌍
-    front = ["순번", "MST_ID", "시행일자", "법령명", "점검유형", "상태", "변경필드수", "핵심변경", "승인", "추천", "추천사유", "검토메모", "사전밖_제외", "소요초", "원문글자수", "판본출처"]   # ★2026-10-14 추천·추천사유·판본출처
+    front = ["순번", "MST_ID", "시행일자", "법령명", "점검유형", "상태", "변경필드수", "핵심변경", "승인", "추천", "추천사유", "자동보강(R6·R7)", "원문미출현_종목", "검토메모", "사전밖_제외", "소요초", "원문글자수", "판본출처"]   # ★2026-10-14 추천·추천사유·판본출처
     pairs = [f"{p}_{c}" for c in C.CORE_COLS for p in ("구", "신")] + \
             [f"{p}_{c}" for c in C.ANALYSIS_COLS if c not in C.CORE_COLS for p in ("구", "신")]
     df = pd.DataFrame(recs).reindex(columns=front + pairs).fillna("")
@@ -473,7 +516,7 @@ def build_compare_xlsx(tg, old_by_id, failures, mock, model, lvl) -> Path:
             o.fill = grey if not o.fill.fgColor.rgb or o.fill.fgColor.rgb == "00000000" else o.fill
     dv = DataValidation(type="list", formula1='"O,X"', allow_blank=True); ws.add_data_validation(dv)
     dv.add(f"{get_column_letter(hdr['승인'])}2:{get_column_letter(hdr['승인'])}{max(ws.max_row, 2)}")
-    for name, wd in {"순번": 5, "MST_ID": 14, "시행일자": 10, "법령명": 34, "점검유형": 30, "상태": 7, "변경필드수": 7, "핵심변경": 44, "승인": 6, "추천": 11, "추천사유": 46, "검토메모": 24, "사전밖_제외": 18, "소요초": 7, "원문글자수": 9, "판본출처": 22}.items():
+    for name, wd in {"순번": 5, "MST_ID": 14, "시행일자": 10, "법령명": 34, "점검유형": 30, "상태": 7, "변경필드수": 7, "핵심변경": 44, "승인": 6, "추천": 11, "추천사유": 46, "자동보강(R6·R7)": 40, "원문미출현_종목": 30, "검토메모": 24, "사전밖_제외": 18, "소요초": 7, "원문글자수": 9, "판본출처": 22}.items():
         ws.column_dimensions[get_column_letter(hdr[name])].width = wd
     for k, col in hdr.items():
         if k.startswith(("구_", "신_")):
