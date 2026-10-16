@@ -19,6 +19,20 @@ import json
 import re
 from hrdk_law_core.llm_client import get_llm_client
 
+# ★2026-10-14 프롬프트 버전 — 분석 프롬프트(run_ai_analysis)나 후처리 방어망의 판정 규칙을 바꿀 때마다 올린다.
+#   재분석 도구(migrate_tool/reanalyze_ledger/run.py)가 결과 캐시에 이 값을 적어 두고, 다르면 자동으로 다시 분석한다.
+#   V27: P1 근거조문 '제N조(제목)' 형식 고정 · P2 종목 전수 자기점검 · P4 타 법령 자격·인력 인용 규칙 · R6 등급 통칭 안전장치
+#   V27.1: P3(등급 전부 나열 강조) 철회 — 회귀검증에서 과잉 확장·흔들림 유발, 모델은 여전히 6/84 → R6 보강안으로 대체 ·
+#          R6 분야 한정어 확장('관한'·'관련' 등, 160자 창) · R7 원문 종목명 글자 대조 안전장치(+조리 자격 문언) · 종목 보강안(_종목보강안) 산출
+#   V27.2: R6는 나열 종목 10개 이하일 때만(별표 많은 법령 오탐 차단) · R7 글자 경계(앞 비한글·뒤 조사/비한글, '재이용사업'의 '이용사' 오탐 차단) ·
+#          R8 정보용: 나열 종목 중 원문에 글자 그대로 없는 것(_원문미출현, 플래그 아님)
+#   V27.3: R7·R8 띄어쓰기 무시 대조 — 문구조사에서 '자동차정비 산업기사'처럼 띄어 쓴 종목명 발견(통칭이 아니라 종목명)
+#   V27.4: 방침 전환 '신호 → 교정' — 매일 배치는 사람 승인 없이 시트에 기록되므로 기계가 아는 것은 고치고 검토필요는 모델 자신의 불확실 신고로만.
+#          R7: 원문에 글자로 있는 종목은 자동 추가(연관도 해당없음일 때만 검토필요 O) · R6: 문구조사로 확인된 두 꼴(전문직 나열 속 등급 / 「국가기술자격법」에 따른 등급+자격, 분야 없음)만
+#          그 등급 전체로 자동 확장, 나머지는 손대지 않음(표시도 없음) · 자동 보강 내역은 상세 분석 결과 끝에 '※ 원문 대조로 추가' 메모(검토사유에 쓰면 R2로 O가 되므로)
+#   V27.5: 꼴②는 등급 뒤쪽(같은 줄 100자)에도 분야 한정어가 없을 때만 — 자동차관리법 시행규칙 별표19 '산업기사(… 직무분야만 해당한다) 이상의 자격'(괄호 한정) 폭발 사례
+PROMPT_VERSION = "V27.5-20261016"
+
 
 def _normalize_relevance(raw: str) -> str:
     """연관도 값 교정. 정식값: 연관높음/단순관련/해당없음 (monitor의 '일반'도 해당없음으로 흡수)"""
@@ -127,9 +141,369 @@ def _append_reason(info, note):
     info["검토사유"] = (cur + " / " + note).strip(" /") if cur else note
     info["검토필요"] = "O"
 
-def _apply_review_guards(info):
+# ★2026-10-14 R6 등급 통칭 안전장치 — '기술사의 자격이 있는 사람', '기사 이상의 자격'처럼 등급 이름만으로
+#   자격을 특정한 문구가 원문에 있는데(바로 앞에 '분야'가 없을 때 = 그 등급 전체를 뜻함) 종목에 그 등급이
+#   절반도 안 들어 있으면 검토필요 O. 신뢰도 '높음'인 오답(20건 시범: 기술사 84종 중 6종만 나열)을 기계가 잡는 장치.
+_GRADE_RE = re.compile(r"(?<![가-힣])(기술사|기능장|산업기사|기사|기능사)(?:의)?\s*(?:자격|이상)")
+_GRADE_FALLBACK = {"기술사": 84, "기능장": 28, "산업기사": 116, "기사": 116, "기능사": 154}   # 2026 사전 기준
+_grade_sizes_cache = {}
+# ★2026-10-15 V27.1 분야 한정어 — 이 말이 앞 160자(같은 줄) 안에 있으면 '그 분야의 등급'이지 등급 전체가 아니다
+#   (자동차관리법 시행규칙 제135조 '자동차정비 또는 자동차검사에 관한 산업기사 이상' 오탐에서 추가)
+_FIELD_LIMITERS = ("분야", "관한", "관련", "직종", "부문", "계열", "종류의", "해당하는")
+_cert_names_cache = {}
+_CUISINE_RE = re.compile(r"(한식|양식|중식|일식|복어)\s*조리\s*(?:자격|기능사|산업기사)")
+
+
+def _field_limited(text: str, start: int) -> bool:
+    scope = text[max(0, start - 160):start]
+    nl = scope.rfind("\n")
+    if nl >= 0:
+        scope = scope[nl + 1:]
+    return any(w in scope for w in _FIELD_LIMITERS)
+
+
+def _cert_names(year=None) -> list:
+    """사전 종목명 전체(글자 대조용). 못 읽으면 빈 목록."""
+    key = year or 0
+    if key not in _cert_names_cache:
+        names = []
+        try:
+            from hrdk_law_core.certs import get_qnet_certs_list
+            for n in get_qnet_certs_list(year):
+                names.append(n if isinstance(n, str) else (n.get("종목명") or str(n)))
+        except Exception:
+            pass
+        _cert_names_cache[key] = names
+    return _cert_names_cache[key]
+
+
+_PARTICLES = set("의를을은는이가와과로에도만등")
+
+
+def _word_bounded(text: str, start: int, end: int) -> bool:
+    """종목명이 낱말로 서 있는가: 앞 글자는 한글이 아니고(또는 문장 처음), 뒤 글자는 한글이 아니거나 조사."""
+    prev = text[start - 1] if start > 0 else ""
+    nxt = text[end] if end < len(text) else ""
+    if prev and "가" <= prev <= "힣":
+        return False
+    if nxt and "가" <= nxt <= "힣" and nxt not in _PARTICLES:
+        return False
+    return True
+
+
+def _unseen_certs(info, law_text: str) -> list:
+    """R8 ★V27.2 정보용: 나열 종목 중 원문에 글자 그대로(괄호 꼬리 제외) 없는 것. 등급·분야 문언에서 끌어낸 종목이면 정상이므로
+    플래그는 걸지 않고 재분석 도구 대조 엑셀에만 보여 사람이 과잉 추론 여부를 판단한다."""
+    if not law_text:
+        return []
+    certs_raw = str(info.get("관련 종목", "")).strip()
+    if "[전종목]" in certs_raw.replace(" ", ""):
+        return []
+    body = re.sub(r"[ \t]+", "", law_text)                       # ★V27.3 띄어쓰기 무시
+    out = []
+    for c in [x.strip() for x in certs_raw.split(",") if x.strip()]:
+        stem = re.sub(r"\(.*?\)$", "", c).replace(" ", "")
+        if stem and stem not in body:
+            out.append(c)
+    return out
+
+
+def _literal_cert_guard(info, law_text: str) -> tuple:
+    """R7 ★2026-10-15. 사전 종목명(괄호 꼬리 제외)이 원문에 글자 그대로 있는데 종목에 없으면 그 이름들을 돌려준다.
+    '복어 조리 자격'처럼 조리 자격 문언은 조리기능사·산업기사로 환산. 반환: (누락 종목 목록, 사유 문구)"""
+    if not law_text:
+        return [], ""
+    certs_raw = str(info.get("관련 종목", "")).strip()
+    if "[전종목]" in certs_raw.replace(" ", ""):
+        return [], ""
+    names = _cert_names()
+    if not names:
+        return [], ""
+    listed = {c.strip() for c in certs_raw.split(",") if c.strip()}
+    stems = {}
+    for n in names:
+        stems.setdefault(re.sub(r"\(.*?\)$", "", n), []).append(n)
+    pat = re.compile("|".join(re.escape(s) for s in sorted(stems, key=len, reverse=True)))
+    found = {}
+    for body in (law_text, re.sub(r"[ \t]+", "", law_text)):     # ★V27.3 원문 + 띄어쓰기 제거본('자동차정비 산업기사' → '자동차정비산업기사')
+        for m in pat.finditer(body):
+            if not _word_bounded(body, m.start(), m.end()):   # ★V27.2 '재이용사업' 속 '이용사' 같은 조각 매칭 제외
+                continue
+            found.setdefault(m.group(0), m.start())
+    for m in _CUISINE_RE.finditer(law_text):
+        for full in (f"{m.group(1)}조리기능사", f"{m.group(1)}조리산업기사"):
+            if full in stems:
+                found.setdefault(full, m.start())
+    missing = []
+    for stem in found:
+        fulls = stems.get(stem, [])
+        if fulls and not any(f in listed for f in fulls):
+            missing.extend(fulls)
+    missing = sorted(dict.fromkeys(missing))
+    if not missing:
+        return [], ""
+    shown = ", ".join(missing[:8]) + (f" 외 {len(missing) - 8}종" if len(missing) > 8 else "")
+    return missing, f"원문에 종목명이 글자 그대로 있는데 종목에 없음({len(missing)}종): {shown}(R7)"
+
+
+def _grade_of(name: str) -> str:
+    """종목명 → 등급('기사'는 '산업기사'와 구분). 등급 접미사가 없으면 ''."""
+    base = re.sub(r"\(.*?\)$", "", str(name).strip())
+    for g in ("기술사", "기능장", "산업기사", "기능사"):
+        if base.endswith(g):
+            return g
+    return "기사" if base.endswith("기사") else ""
+
+
+def _grade_sizes(year=None) -> dict:
+    """등급별 종목 수 — 사전(certs)에서 세고, 못 읽으면 2026년 고정값."""
+    key = year or 0
+    if key in _grade_sizes_cache:
+        return _grade_sizes_cache[key]
+    sizes = dict(_GRADE_FALLBACK)
+    try:
+        from hrdk_law_core.certs import get_qnet_certs_list
+        cnt = {}
+        for n in get_qnet_certs_list(year):
+            nm = n if isinstance(n, str) else (n.get("종목명") or str(n))
+            g = _grade_of(nm)
+            if g:
+                cnt[g] = cnt.get(g, 0) + 1
+        if cnt:
+            sizes.update(cnt)
+    except Exception:
+        pass
+    _grade_sizes_cache[key] = sizes
+    return sizes
+
+
+_GRADE_ORDER = ["기능사", "산업기사", "기사", "기능장", "기술사"]
+_PROFESSIONS = ("변호사", "변리사", "공인회계사", "건축사", "감정평가사", "세무사", "법무사", "공인노무사", "노무사", "기술지도사", "경영지도사", "관세사", "행정사")
+# 꼴② 「국가기술자격법」(제N조)에 따른/따라 + 등급(들) + (이상의) 자격
+_LAWREF_GRADE_RE = re.compile(
+    r"국가기술자격법」?(?:\s*제\d+조(?:의\d+)?)?에\s*(?:따른|따라)\s*"
+    r"((?:기술사|기능장|산업기사|기사|기능사)(?:\s*(?:또는|및|ㆍ|·|,)\s*(?:기술사|기능장|산업기사|기사|기능사))*)"
+    r"\s*(이상)?(?:의)?\s*자격")
+
+
+def _grades_from(text_grades: str, above: bool) -> list:
+    """'기술사 또는 기능장' → ['기술사','기능장']; '기사' + 이상 → ['기사','기능장','기술사']"""
+    found = re.findall(r"기술사|기능장|산업기사|기사|기능사", text_grades)
+    out = []
+    for g in found:
+        if above:
+            out += _GRADE_ORDER[_GRADE_ORDER.index(g):]
+        else:
+            out.append(g)
+    return list(dict.fromkeys(out))
+
+
+def _grade_generic_expand(info, law_text: str) -> tuple:
+    """R6 ★V27.4 교정형. 문구조사(2026-10-15, 118개 법령)에서 '분야 없는 진짜 등급 통칭'으로 확인된 두 꼴만 자동 확장한다.
+      꼴① 전문직 나열 속 등급: '변호사, 변리사, 공인회계사, 건축사 또는 기술사의 자격이 있는 사람' (상생협력법·기술이전법 시행령)
+      꼴② 법 이름 바로 뒤 등급: '「국가기술자격법」에 따른 기사 이상의 자격', '제10조에 따라 기술사 또는 기능장의 자격' (원자력안전법·이공계지원법 시행령)
+    두 꼴 모두 같은 문장(같은 줄 앞 160자)에 분야 한정어가 없을 때만. 그 밖의 등급 문구(별표 표·중첩 목록)는 손대지 않는다.
+    반환: (추가할 종목 목록, 메모)"""
+    if not law_text:
+        return [], ""
+    certs_raw = str(info.get("관련 종목", "")).strip()
+    if "[전종목]" in certs_raw.replace(" ", ""):
+        return [], ""
+    grades, how = [], []
+    for m in _GRADE_RE.finditer(law_text):                                   # 꼴①
+        if _field_limited(law_text, m.start()):
+            continue
+        scope = law_text[max(0, m.start() - 120):m.start()]
+        nl = scope.rfind("\n")
+        scope = scope[nl + 1:] if nl >= 0 else scope
+        if any(p in scope for p in _PROFESSIONS) and "자격" in m.group(0):      # '…의 자격'·'… 자격'만('이상'만 붙은 것은 제외)
+            prev_tok = re.search(r"([가-힣]+)\s+$", law_text[max(0, m.start() - 16):m.start()])
+            stems_all = {re.sub(r"\(.*?\)$", "", n) for n in _cert_names()}
+            if prev_tok and (prev_tok.group(1) + m.group(1)) in stems_all:
+                continue
+            for g in _grades_from(m.group(1), False):
+                if g not in grades:
+                    grades.append(g); how.append(f"전문직 나열 속 '{g}'")
+    for m in _LAWREF_GRADE_RE.finditer(law_text):                            # 꼴②
+        if _field_limited(law_text, m.start(1)):
+            continue
+        after = law_text[m.end(1):m.end(1) + 100]                            # ★V27.5 등급 뒤 괄호·후속 구절의 분야 한정
+        nl = after.find("\n")
+        after = after[:nl] if nl >= 0 else after
+        if any(w in after for w in _FIELD_LIMITERS):
+            continue
+        for g in _grades_from(m.group(1), bool(m.group(2))):
+            if g not in grades:
+                grades.append(g); how.append(f"「국가기술자격법」에 따른 '{m.group(1)}{' 이상' if m.group(2) else ''}'")
+    if not grades:
+        return [], ""
+    listed = {c.strip() for c in certs_raw.split(",") if c.strip()}
+    add = [n for n in _cert_names() if _grade_of(n) in grades and n not in listed]
+    if not add:
+        return [], ""
+    return add, f"등급 통칭 확장(R6): {' / '.join(dict.fromkeys(how))} → {', '.join(f'{g} 전체' for g in grades)} {len(add)}종 추가"
+
+
+_PARTICLES = set("의를을은는이가와과로에도만등")
+
+
+def _word_bounded(text: str, start: int, end: int) -> bool:
+    """종목명이 낱말로 서 있는가: 앞 글자는 한글이 아니고(또는 문장 처음), 뒤 글자는 한글이 아니거나 조사."""
+    prev = text[start - 1] if start > 0 else ""
+    nxt = text[end] if end < len(text) else ""
+    if prev and "가" <= prev <= "힣":
+        return False
+    if nxt and "가" <= nxt <= "힣" and nxt not in _PARTICLES:
+        return False
+    return True
+
+
+def _unseen_certs(info, law_text: str) -> list:
+    """R8 ★V27.2 정보용: 나열 종목 중 원문에 글자 그대로(괄호 꼬리 제외) 없는 것. 등급·분야 문언에서 끌어낸 종목이면 정상이므로
+    플래그는 걸지 않고 재분석 도구 대조 엑셀에만 보여 사람이 과잉 추론 여부를 판단한다."""
+    if not law_text:
+        return []
+    certs_raw = str(info.get("관련 종목", "")).strip()
+    if "[전종목]" in certs_raw.replace(" ", ""):
+        return []
+    body = re.sub(r"[ \t]+", "", law_text)                       # ★V27.3 띄어쓰기 무시
+    out = []
+    for c in [x.strip() for x in certs_raw.split(",") if x.strip()]:
+        stem = re.sub(r"\(.*?\)$", "", c).replace(" ", "")
+        if stem and stem not in body:
+            out.append(c)
+    return out
+
+
+def _literal_cert_guard(info, law_text: str) -> tuple:
+    """R7 ★2026-10-15. 사전 종목명(괄호 꼬리 제외)이 원문에 글자 그대로 있는데 종목에 없으면 그 이름들을 돌려준다.
+    '복어 조리 자격'처럼 조리 자격 문언은 조리기능사·산업기사로 환산. 반환: (누락 종목 목록, 사유 문구)"""
+    if not law_text:
+        return [], ""
+    certs_raw = str(info.get("관련 종목", "")).strip()
+    if "[전종목]" in certs_raw.replace(" ", ""):
+        return [], ""
+    names = _cert_names()
+    if not names:
+        return [], ""
+    listed = {c.strip() for c in certs_raw.split(",") if c.strip()}
+    stems = {}
+    for n in names:
+        stems.setdefault(re.sub(r"\(.*?\)$", "", n), []).append(n)
+    pat = re.compile("|".join(re.escape(s) for s in sorted(stems, key=len, reverse=True)))
+    found = {}
+    for body in (law_text, re.sub(r"[ \t]+", "", law_text)):     # ★V27.3 원문 + 띄어쓰기 제거본('자동차정비 산업기사' → '자동차정비산업기사')
+        for m in pat.finditer(body):
+            if not _word_bounded(body, m.start(), m.end()):   # ★V27.2 '재이용사업' 속 '이용사' 같은 조각 매칭 제외
+                continue
+            found.setdefault(m.group(0), m.start())
+    for m in _CUISINE_RE.finditer(law_text):
+        for full in (f"{m.group(1)}조리기능사", f"{m.group(1)}조리산업기사"):
+            if full in stems:
+                found.setdefault(full, m.start())
+    missing = []
+    for stem in found:
+        fulls = stems.get(stem, [])
+        if fulls and not any(f in listed for f in fulls):
+            missing.extend(fulls)
+    missing = sorted(dict.fromkeys(missing))
+    if not missing:
+        return [], ""
+    shown = ", ".join(missing[:8]) + (f" 외 {len(missing) - 8}종" if len(missing) > 8 else "")
+    return missing, f"원문에 종목명이 글자 그대로 있는데 종목에 없음({len(missing)}종): {shown}(R7)"
+
+
+def _grade_of(name: str) -> str:
+    """종목명 → 등급('기사'는 '산업기사'와 구분). 등급 접미사가 없으면 ''."""
+    base = re.sub(r"\(.*?\)$", "", str(name).strip())
+    for g in ("기술사", "기능장", "산업기사", "기능사"):
+        if base.endswith(g):
+            return g
+    return "기사" if base.endswith("기사") else ""
+
+
+def _grade_sizes(year=None) -> dict:
+    """등급별 종목 수 — 사전(certs)에서 세고, 못 읽으면 2026년 고정값."""
+    key = year or 0
+    if key in _grade_sizes_cache:
+        return _grade_sizes_cache[key]
+    sizes = dict(_GRADE_FALLBACK)
+    try:
+        from hrdk_law_core.certs import get_qnet_certs_list
+        cnt = {}
+        for n in get_qnet_certs_list(year):
+            nm = n if isinstance(n, str) else (n.get("종목명") or str(n))
+            g = _grade_of(nm)
+            if g:
+                cnt[g] = cnt.get(g, 0) + 1
+        if cnt:
+            sizes.update(cnt)
+    except Exception:
+        pass
+    _grade_sizes_cache[key] = sizes
+    return sizes
+
+
+def _grade_generic_guard(info, law_text: str):
+    """R6. 반환: 검토사유에 붙일 문구 또는 ''."""
+    if not law_text:
+        return ""
+    certs_raw = str(info.get("관련 종목", "")).strip()
+    if "[전종목]" in certs_raw.replace(" ", ""):
+        return ""
+    grades = []
+    stems_all = {re.sub(r"\(.*?\)$", "", n) for n in _cert_names()}
+    for m in _GRADE_RE.finditer(law_text):
+        if _field_limited(law_text, m.start()):   # '해당 분야의 기사 이상', '자동차검사에 관한 산업기사' = 한정 → 부분 집합이 맞음
+            continue
+        prev_tok = re.search(r"([가-힣]+)\s+$", law_text[max(0, m.start() - 16):m.start()])
+        if prev_tok and (prev_tok.group(1) + m.group(1)) in stems_all:   # ★V27.3 '자동차정비 산업기사' = 띄어 쓴 종목명, 통칭 아님
+            continue
+        if m.group(1) not in grades:
+            grades.append(m.group(1))
+    if not grades:
+        return ""
+    listed = [c.strip() for c in certs_raw.split(",") if c.strip()]
+    if len(listed) > 10:                      # ★V27.2 이미 종목을 길게 나열한 법령(별표 인력표)은 등급 통칭 오탐이 많아 제외
+        return ""
+    sizes = _grade_sizes()
+    notes, short = [], []
+    for g in grades:
+        have = sum(1 for c in listed if _grade_of(c) == g)
+        total = sizes.get(g, _GRADE_FALLBACK.get(g, 0))
+        if total and have < total * 0.5:
+            notes.append(f"등급 통칭 문구('{g}의 자격/이상') 감지 — {g} 종목 {have}/{total}종만 나열, 전부 나열 여부 확인(R6)")
+            short.append(g)
+    info["_R6등급"] = short                        # 보강안 계산용(시트 열 아님)
+    return " / ".join(notes)
+
+
+def _apply_review_guards(info, law_text: str = ""):
     """R1 해당없음+사유빈칸→X / R2 사유있음→O / R3 O+사유빈칸→자동문구 /
-    R4 우대O 연동 위반→O / R5 우대O+신뢰도 보통·낮음→O"""
+    R4 우대O 연동 위반→O / R5 우대O+신뢰도 보통·낮음→O / ★V27.4 R7 원문 글자 종목 자동 추가 · R6 두 꼴 등급 통칭 자동 확장(교정, 신호 아님)"""
+    # ★V27.4 교정형 방어망 — 기계가 글자로 확인한 것은 고치고, 사람 신호(검토필요 O)는 모델 자신의 불확실(R1~R5)로만 남긴다
+    notes = []
+    missing, r7 = _literal_cert_guard(info, law_text)
+    if missing:
+        if str(info.get("연관도", "")).strip() == "해당없음":
+            _append_reason(info, "해당없음 판정인데 원문에 종목명이 글자 그대로 있음: " + ", ".join(missing[:6]) + "(R7) — 판정 재확인")
+        else:
+            cur = [c.strip() for c in str(info.get("관련 종목", "")).split(",") if c.strip()]
+            info["관련 종목"] = ", ".join(dict.fromkeys(cur + missing))
+            notes.append(f"원문 대조로 추가(R7): {', '.join(missing)}")
+    add6, note6 = _grade_generic_expand(info, law_text)
+    if add6:
+        cur = [c.strip() for c in str(info.get("관련 종목", "")).split(",") if c.strip()]
+        info["관련 종목"] = ", ".join(dict.fromkeys(cur + add6))
+        notes.append(note6)
+    if notes:
+        memo = "※ " + " / ".join(notes)
+        detail = str(info.get("상세 분석 결과", "")).rstrip()
+        info["상세 분석 결과"] = (detail + "\n" + memo) if detail else memo
+        info["_자동보강"] = " / ".join(notes)            # 재분석 도구 대조 엑셀 표시용(시트 열 아님)
+    unseen = _unseen_certs(info, law_text)             # ★V27.2 R8 정보용(시트 열 아님)
+    if unseen:
+        info["_원문미출현"] = ", ".join(unseen)
     rel   = str(info.get("연관도", "")).strip()
     pref  = str(info.get("우대여부", "")).strip()
     cls   = str(info.get("우대분류", "")).strip()
@@ -234,8 +608,13 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
       (a) 국가기술자격 종목명이 조문·별표에 텍스트로 명시됨
       (b) 종목명은 없어도 조문이 '자격'을 요건·대상으로 명시하여(예: '국가기술자격 취득자',
           '기술자격을 가진 사람', '해당 분야 기사 이상의 자격') 자격자의 선임·배치·우대·업무 권한을 규율함
+      (c) ★타 법령 자격·인력 인용 규칙: 조문이 「산림기술 진흥법」의 산림기술자, 「건설기술 진흥법」의 건설기술인,
+          「전력기술관리법」의 전력기술인, 타 법령의 면허·기술자처럼 '다른 법령이 정한 자격·인력'만 인용하고
+          국가기술자격 종목·등급을 직접 쓰지 않으면 (a)(b)에 해당하지 않습니다 → 연관도 "단순관련",
+          종목 "", 우대여부 "X", 검토필요 "X". 그 면허·기술자의 취득 요건에 국가기술자격이 포함되더라도
+          그것은 본 법령의 문언이 아니므로 연동을 추론하지 마십시오.
     - "단순관련": (a)(b)가 모두 없고, 직무 내용의 유사성이나 산업 연관으로만 자격에 실무상 영향이
-      추정되는 경우. ※ 직무 유사성만으로 "연관높음"을 주지 마십시오.
+      추정되는 경우(위 (c)의 경우 포함). ※ 직무 유사성만으로 "연관높음"을 주지 마십시오.
     - "해당없음": 자격과 무관. 이 경우 나머지 항목은 다음 기본값으로 즉시 결론:
       종목 "", 활용도_구분 "", 활용도_상세 "", 우대여부 "X", 검토필요 "X", 검토사유 "".
 
@@ -253,10 +632,13 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
       ③ 부분 포괄(등급·직무분야 한정): '기사 이상', '건설 분야 국가기술자격'처럼 범위만 정하면,
          리스트에서 그 문언에 해당하는 종목만 골라 ①과 같이 나열.
          (등급 서열: 기술사 > 기능장 > 기사 > 산업기사 > 기능사. '기사 이상' = 기사·기능장·기술사)
+         ※ '운전기사', '신문 기사', '기능사 양성'처럼 '자격'·'이상'이 붙지 않고 등급 단어가 다른 뜻으로
+            쓰인 문구는 ③에 해당하지 않습니다.
       연관 종목이 하나도 없으면 반드시 빈 문자열("")로 둘 것 — '없음', '-', '해당없음' 같은 문자는
       절대 쓰지 말 것 (빈칸이 곧 '매칭 없음'의 공식 표기).
     - 조문리스트: 근거 조문이 여러 개면 **반드시 모두 추출**
-        - 제O조 형태: {{"조문명": "제23조의2", "숫자": "23.2"}}
+        - 제O조 형태: {{"조문명": "제23조의2(기술자료 임치제도)", "숫자": "23.2"}} — 원문에 조문 제목이 있으면
+          '제23조의2(제목)'처럼 괄호 안에 제목까지 반드시 적을 것(제목 생략 금지). 제목이 없는 조문만 번호로.
         - 별표 형태: "별표1"이 아닌 "별표 1"처럼 반드시 띄어쓰기 (숫자는 빈칸 "")
 
     ### 📈 [STEP 3. 노동시장 활용도 (연관높음·단순관련 모두 작성, 해당없음일 때만 빈칸)]
@@ -269,7 +651,7 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     우대여부: 조문·별표에 (a) 종목명 또는 (b) 자격 요건 문언이 실제로 존재하고, 그 문언이 국가기술자격
     취득자에게 실질적 우대·요구(의무고용, 직무권한, 인사우대, 시험면제, 위촉자격 등)를 부여하면 "O".
     관련은 있으나 우대 조항이 없으면 "X". 직무 유사성 추론만으로는 "O"를 주지 말 것
-    (그 경우 연관도는 "단순관련", 우대여부는 "X").
+    (그 경우 연관도는 "단순관련", 우대여부는 "X"). 타 법령의 면허·기술자만 인용한 조항도 STEP 1 (c)에 따라 "X".
     ★ 우대여부가 "X"이면: 우대분류="기타", Track1_취급유형="Z", Track1_위험도="X",
       Track2_효용코드="Ⅳ-0", 중처법대상="비대상", 조문_요약과 상세_분석은 빈칸("")으로 두고 즉시 종료.
     ★ 우대여부가 "O"이면 아래 4-1 ~ 4-5를 모두 작성:
@@ -367,6 +749,12 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
        오직 리스트의 표기 그대로 '자격증이름1, 자격증이름2' 처럼 쉼표로 연결하세요. (예외: 포괄형 토큰 [전종목])
     5. **열거된 종목은 무제한, 통칭은 토큰**: 조문·별표에 실제 열거된 종목은 수백 개라도 단 하나도 누락하지
        말고 끝까지 다 작성하세요. 반대로 전 종목을 통칭하는 조문은 개별 나열 대신 [전종목] 하나만 쓰세요.
+    6. **종목 전수 자기점검(출력 직전)**: JSON을 쓰기 전에 원문 전체(조문·별표·개정이유)를 다시 한 번 훑어
+       (가) '기술사·기능장·기사·산업기사·기능사'가 들어간 모든 문구, (나) '○○ 자격', '자격을 취득한',
+       '자격이 있는', '자격자' 문구를 전부 찾아 그 종목이 ①~③에 빠짐없이 들어갔는지 확인하세요.
+       눈에 띄는 조항 몇 개만 보고 일부 종목을 골라 적는 것은 오답입니다. 별표의 기술인력·검사원·관리자
+       기준표에 적힌 종목(예: '기계분야 및 전기분야의 소방설비기사')과 '복어 조리 자격'처럼 문언이 가리키는
+       종목도 모두 포함합니다.
 
     ### 📤 [출력 JSON 포맷 (Strict Rule)]
     반드시 아래 JSON 형식만 출력하고, 설명이나 마크다운 백틱(```json)을 포함하지 마십시오.
@@ -519,7 +907,7 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
         }
 
         # ── ★2026-09-16 후처리 방어망 R1~R5 (자동 교정이 아니라 '검토필요'로 넘김) ──
-        _apply_review_guards(law_info)
+        _apply_review_guards(law_info, str(law.get("원본", "")))   # ★2026-10-14 R6 는 원문이 필요
 
         return True, 연관도, law_info
 
