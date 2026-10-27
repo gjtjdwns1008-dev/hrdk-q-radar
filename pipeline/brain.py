@@ -31,7 +31,9 @@ from hrdk_law_core.llm_client import get_llm_client
 #          R7: 원문에 글자로 있는 종목은 자동 추가(연관도 해당없음일 때만 검토필요 O) · R6: 문구조사로 확인된 두 꼴(전문직 나열 속 등급 / 「국가기술자격법」에 따른 등급+자격, 분야 없음)만
 #          그 등급 전체로 자동 확장, 나머지는 손대지 않음(표시도 없음) · 자동 보강 내역은 상세 분석 결과 끝에 '※ 원문 대조로 추가' 메모(검토사유에 쓰면 R2로 O가 되므로)
 #   V27.5: 꼴②는 등급 뒤쪽(같은 줄 100자)에도 분야 한정어가 없을 때만 — 자동차관리법 시행규칙 별표19 '산업기사(… 직무분야만 해당한다) 이상의 자격'(괄호 한정) 폭발 사례
-PROMPT_VERSION = "V27.5-20261016"
+#   V27.6: 꼴②(「국가기술자격법」에 따른 등급+자격) 제거 — 캐시 116건에서 정탐 0, 운영 첫 발동(군인 등의 특수근무수당에 관한 규칙 별표2, '해당 분야에 대한 자격증(…산업기사 이상…)')이
+#          표 칸 줄바꿈으로 한정어를 놓친 오탐(9→344종). 꼴①(전문직 나열 속 등급)만 유지
+PROMPT_VERSION = "V27.6-20261027"
 
 
 def _normalize_relevance(raw: str) -> str:
@@ -279,11 +281,6 @@ def _grade_sizes(year=None) -> dict:
 
 _GRADE_ORDER = ["기능사", "산업기사", "기사", "기능장", "기술사"]
 _PROFESSIONS = ("변호사", "변리사", "공인회계사", "건축사", "감정평가사", "세무사", "법무사", "공인노무사", "노무사", "기술지도사", "경영지도사", "관세사", "행정사")
-# 꼴② 「국가기술자격법」(제N조)에 따른/따라 + 등급(들) + (이상의) 자격
-_LAWREF_GRADE_RE = re.compile(
-    r"국가기술자격법」?(?:\s*제\d+조(?:의\d+)?)?에\s*(?:따른|따라)\s*"
-    r"((?:기술사|기능장|산업기사|기사|기능사)(?:\s*(?:또는|및|ㆍ|·|,)\s*(?:기술사|기능장|산업기사|기사|기능사))*)"
-    r"\s*(이상)?(?:의)?\s*자격")
 
 
 def _grades_from(text_grades: str, above: bool) -> list:
@@ -299,11 +296,10 @@ def _grades_from(text_grades: str, above: bool) -> list:
 
 
 def _grade_generic_expand(info, law_text: str) -> tuple:
-    """R6 ★V27.4 교정형. 문구조사(2026-10-15, 118개 법령)에서 '분야 없는 진짜 등급 통칭'으로 확인된 두 꼴만 자동 확장한다.
-      꼴① 전문직 나열 속 등급: '변호사, 변리사, 공인회계사, 건축사 또는 기술사의 자격이 있는 사람' (상생협력법·기술이전법 시행령)
-      꼴② 법 이름 바로 뒤 등급: '「국가기술자격법」에 따른 기사 이상의 자격', '제10조에 따라 기술사 또는 기능장의 자격' (원자력안전법·이공계지원법 시행령)
-    두 꼴 모두 같은 문장(같은 줄 앞 160자)에 분야 한정어가 없을 때만. 그 밖의 등급 문구(별표 표·중첩 목록)는 손대지 않는다.
-    반환: (추가할 종목 목록, 메모)"""
+    """R6 ★V27.4 교정형 / V27.6 꼴①만. 문구조사(2026-10-15)와 운영 실측으로 정탐만 확인된 꼴만 자동 확장한다.
+      꼴① 전문직 나열 속 등급: '변호사, 변리사, 공인회계사, 건축사 또는 기술사의 자격이 있는 사람' (상생협력법·기술이전법 시행령) — 같은 줄 앞 160자에 분야 한정어 없을 때
+      (꼴② '「국가기술자격법」에 따른 등급+자격'은 표 칸 줄바꿈으로 한정어를 놓치는 오탐이 있어 V27.6에서 제거)
+    그 밖의 등급 문구(별표 표·중첩 목록·'기능계 기술자격' 같은 용어)는 손대지 않는다. 반환: (추가할 종목 목록, 메모)"""
     if not law_text:
         return [], ""
     certs_raw = str(info.get("관련 종목", "")).strip()
@@ -324,17 +320,7 @@ def _grade_generic_expand(info, law_text: str) -> tuple:
             for g in _grades_from(m.group(1), False):
                 if g not in grades:
                     grades.append(g); how.append(f"전문직 나열 속 '{g}'")
-    for m in _LAWREF_GRADE_RE.finditer(law_text):                            # 꼴②
-        if _field_limited(law_text, m.start(1)):
-            continue
-        after = law_text[m.end(1):m.end(1) + 100]                            # ★V27.5 등급 뒤 괄호·후속 구절의 분야 한정
-        nl = after.find("\n")
-        after = after[:nl] if nl >= 0 else after
-        if any(w in after for w in _FIELD_LIMITERS):
-            continue
-        for g in _grades_from(m.group(1), bool(m.group(2))):
-            if g not in grades:
-                grades.append(g); how.append(f"「국가기술자격법」에 따른 '{m.group(1)}{' 이상' if m.group(2) else ''}'")
+    # 꼴②(법 이름 뒤 등급)는 V27.6에서 제거 — 표 칸 줄바꿈으로 한정어를 놓치는 오탐이 정탐보다 많았음
     if not grades:
         return [], ""
     listed = {c.strip() for c in certs_raw.split(",") if c.strip()}
