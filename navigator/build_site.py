@@ -1507,7 +1507,27 @@ function ovLawByIdx(i){var d=MLAWS[i];if(!d)return;mb2.innerHTML=monitorHTML(d);
  window.addEventListener('hashchange',apply);
  apply();                                            // 첫 진입·새로고침(F5) 처리
 })();
-</script></body></html>
+</script>
+<script>
+  // Q-RADAR 방문자 집계(GoatCounter) — 쿠키·개인식별 없이 화면(해시) 단위 기록 ('26.11.04, Q-PAGE 작업지시서 v1.0)
+  window.goatcounter = { path: function(){ var h = location.hash.replace(/^#\/?/, ''); return '/' + (h || ''); } };
+  window.addEventListener('hashchange', function(){ if (window.goatcounter.count) window.goatcounter.count(); });
+  // 종목 팝업 열기는 replaceState 방식(__qrSyncHash)이라 hashchange가 발생하지 않음 → 래핑으로 보고
+  (function(){
+    var tries = 0, t = setInterval(function(){
+      if (typeof window.__qrSyncHash !== 'function') { if (++tries > 33) clearInterval(t); return; }
+      clearInterval(t);
+      var orig = window.__qrSyncHash;
+      window.__qrSyncHash = function(i){
+        var prev = location.hash;                     // ★지시서 대비 추가: 딥링크(#/q/…) 첫 로드 때
+        orig(i);                                      //   count.js의 자동 집계와 겹치는 이중 집계 방지
+        if (window.goatcounter.count && location.hash.indexOf('#/q') === 0 && location.hash !== prev) window.goatcounter.count();
+      };
+    }, 300);
+  })();
+</script>
+<script data-goatcounter="https://hrdk-q-radar.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</body></html>
 """
 
 if __name__ == "__main__":
