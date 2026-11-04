@@ -22,6 +22,11 @@ def api(sitecfg, path):
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode())
 
+def _clean(t):
+    """★검토수정(보안): 방문자 브라우저가 정하는 문자열(제목)에서 HTML 특수문자를 제거하고 길이 제한 —
+       관제판은 이 값을 화면에 그대로 끼워 넣으므로(innerHTML) 소독 없이는 악성 스크립트 주입 통로가 된다."""
+    return re.sub(r'[<>&"\'`]', "", t)[:60]
+
 def pick(d, *keys, default=0):
     for k in keys:
         if isinstance(d, dict) and d.get(k) is not None: return d[k]
@@ -29,7 +34,7 @@ def pick(d, *keys, default=0):
 
 def fetch_day(sitecfg, day):
     """해당 '하루치' 경로별 집계."""
-    hits = api(sitecfg, "/stats/hits?start=%s&end=%s&limit=200" % (day, day))
+    hits = api(sitecfg, "/stats/hits?start=%s&end=%s&limit=100" % (day, day))  # ★검토수정: API 상한 1~100 (goatcounter.com/api2.html)
     rows = []
     for h in pick(hits, "hits", "paths", default=[]) or []:
         rows.append({"path": pick(h, "path", default=""),
@@ -88,9 +93,14 @@ def main():
     src, out = sys.argv[1], sys.argv[2]
     ledger = sys.argv[sys.argv.index("--ledger") + 1] if "--ledger" in sys.argv else None
     H = io.open(src, encoding="utf-8").read()
-    D = json.loads(re.search(r'<script id="qdata" type="application/json">(.*?)</script>', H, re.S).group(1))
-    name = {i["code"]: i["name"] for i in D["items"]}
-    etyp = {i["code"]: i["etype"] for i in D["items"]}
+    _m = re.search(r'<script id="qdata" type="application/json">(.*?)</script>', H, re.S)
+    if _m:
+        D = json.loads(_m.group(1))
+        name = {i["code"]: i["name"] for i in D["items"]}
+        etyp = {i["code"]: i["etype"] for i in D["items"]}
+    else:                                  # ★검토수정: Q-PAGE 화면 개편 등으로 사전이 없어도 수집은 계속(종목코드로 표기)
+        print("  (경고: Q-PAGE 화면에서 종목명 사전을 찾지 못함 — 코드로 표기)")
+        name, etyp = {}, {}
     KST = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(KST); today = now.strftime("%Y-%m-%d")
     sites = []
@@ -102,7 +112,7 @@ def main():
                 m = re.fullmatch(r"/q/([0-9A-Z]{4})", r["path"])
                 if not m: continue
                 c = m.group(1)
-                nm = name.get(c) or (r["title"].split(" · ")[0] if r["title"] else c)
+                nm = name.get(c) or (_clean(r["title"].split(" · ")[0]) if r["title"] else c)
                 qs.append(dict(c=c, nm=nm, et=etyp.get(c, ""), n=r["n"]))
             sites.append(dict(label=sc["label"], desc=sc["desc"], status="on",
                               total=sum(r["n"] for r in rows),
@@ -113,7 +123,7 @@ def main():
             print("  (%s: 집계 미수신 → 대기 표시 · %s)" % (sc["label"], type(e).__name__))
             sites.append(dict(label=sc["label"], desc=sc["desc"], status="wait"))
     data = dict(since=SINCE, gen=now.strftime("%Y-%m-%d %H:%M"), sites=sites)
-    html = PAGE.replace("__DATA__", json.dumps(data, ensure_ascii=False))
+    html = PAGE.replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("<", "\\u003c"))  # ★검토수정(보안): </script> 끼어들기 차단
     os.makedirs(out, exist_ok=True)
     io.open(os.path.join(out, "index.html"), "w", encoding="utf-8").write(html)
     print("[방문 통계] %d개 사이트 섹션 → %s/index.html" % (len(data["sites"]), out))
