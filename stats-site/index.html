@@ -54,7 +54,7 @@ tr:last-child td{border-bottom:0}
 <div class="foot"><span>원천: GoatCounter(개인정보·쿠키 미수집) · 일별 사본을 저장소에 적층해 전 기간 이력 보존 · 매일 아침 자동 갱신</span><span>© HRDK Q-PAGE</span></div>
 </div>
 <script>
-var DATA = {"since": "2026-11-04", "gen": "2026-11-04 18:00", "sites": [{"label": "Q-PAGE", "desc": "자격정보집(상세·원페이지)", "status": "on", "total": 0, "home": 0, "qsum": 0, "qcnt": 0, "top": [], "daily": [{"d": "2026-11-04", "n": 0}]}, {"label": "Q-RADAR", "desc": "우대법령 네비게이터", "status": "on", "total": 0, "home": 0, "qsum": 0, "qcnt": 0, "top": [], "daily": [{"d": "2026-11-04", "n": 0}]}]};
+var DATA = {"since": "2026-11-04", "gen": "2026-11-04 18:31", "sites": [{"label": "Q-PAGE", "desc": "자격정보집(상세·원페이지)", "status": "on", "total": 6, "home": 1, "qsum": 5, "qcnt": 5, "top": [{"c": "1630", "nm": "건축기사", "et": "검정형", "n": 1}, {"c": "7140", "nm": "가구제작기능사", "et": "검정형", "n": 1}, {"c": "9542", "nm": "게임프로그래밍전문가", "et": "검정형", "n": 1}, {"c": "1750", "nm": "건설재료시험기사", "et": "검정형", "n": 1}, {"c": "7785", "nm": "3D프린터운용기능사", "et": "검정형", "n": 1}], "daily": [{"d": "2026-11-04", "n": 6}]}, {"label": "Q-RADAR", "desc": "우대법령 네비게이터", "status": "on", "total": 5, "home": 2, "qsum": 3, "qcnt": 3, "top": [{"c": "2450", "nm": "식품산업기사", "et": "검정형", "n": 1}, {"c": "0601", "nm": "정보관리기술사", "et": "검정형", "n": 1}, {"c": "0210", "nm": "화공기술사", "et": "검정형", "n": 1}], "daily": [{"d": "2026-11-04", "n": 5}]}]};
 function el(t,c,h){var e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 function fmt(n){return (n||0).toLocaleString("ko-KR");}
 function countUp(node,to){var t0=null,d=900;function step(ts){if(!t0)t0=ts;var p=Math.min(1,(ts-t0)/d);p=1-Math.pow(1-p,3);node.textContent=fmt(Math.round(to*p));if(p<1)requestAnimationFrame(step);}requestAnimationFrame(step);}
@@ -80,7 +80,7 @@ DATA.sites.forEach(function(s,si){
   if(s.status!=="on"){box.appendChild(el("p","wait","집계 적용 대기 중 — 사이트 개설·스니펫 반영 후 자동으로 표출됩니다."));}
   else{
     var cards=el("div","cards");
-    [["누적 방문(페이지뷰)",s.total," 회"],["종목 상세 조회",s.qsum," 회 · "+fmt(s.qcnt)+"개 종목"],["목록(홈) 조회",s.home," 회"]].forEach(function(c){
+    [["누적 방문(방문자 수)",s.total," 명"],["종목 상세 조회",s.qsum," 회 · "+fmt(s.qcnt)+"개 종목"],["목록(홈) 조회",s.home," 회"]].forEach(function(c){
       var card=el("div","card",'<div class="k">'+c[0]+'</div><div class="v"><span class="num">0</span><small>'+c[2]+'</small></div>');
       card.querySelector(".num").dataset.to=c[1];cards.appendChild(card);});
     box.appendChild(cards);
